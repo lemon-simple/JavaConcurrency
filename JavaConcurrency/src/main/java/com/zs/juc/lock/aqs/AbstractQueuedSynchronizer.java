@@ -163,6 +163,13 @@ import sun.misc.Unsafe;
  * {@code tryAcquire} to return {@code false} if {@link #hasQueuedPredecessors}
  * (a method specifically designed to be used by fair synchronizers) returns
  * {@code true}. Other variations are possible.
+ * 
+ *在入队之前会调用获取锁的checkin检查，一个新的获取线程也许会在阻塞等待入队的线程前插队。
+ *然而，你可以定义tryAcquire方法或者tryAcquireShared方法去通过内部调用一个或者多个监测方法阻止闯入操作，
+ *因此提供一个公平的FIFO队列保证获取的顺序。
+ *特别是大多数公平同步器可以在hasQueuedPredecessors(一个专门用于公平同步器使用的方法)返回true时来定义tryAcquire返回false，
+ *其他的变化也是可能的。
+ *
  *
  * <p>
  * Throughput and scalability are generally highest for the default barging
@@ -179,6 +186,10 @@ import sun.misc.Unsafe;
  * prechecking {@link #hasContended} and/or {@link #hasQueuedThreads} to only do
  * so if the synchronizer is likely not to be contended.
  *
+ * 对默认的闯入(barging)策略,吞吐量和扩展性通常是最高优先级的。
+ * 然而并不能保证公平或线程无饥饿,早先的排队线程是允许在排在它自己后边的线程之前再次竞争的，
+ * 并且每次竞争都会有一个公正的机会去成功的阻止进入的线程。
+ * 当acquire没有自旋(spin),通常也许会多次执行tryAcquire的调用，
  * <p>
  * This class provides an efficient and scalable basis for synchronization in
  * part by specializing its range of use to synchronizers that can rely on
@@ -353,6 +364,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      * success; it only gives the right to contend. So the currently released
      * contender thread may need to rewait.
      *
+     *这个等待队列是CLH锁队列的一个变体,CLH锁通常被用来当做自旋锁。
      * <p>
      * To enqueue into a CLH lock, you atomically splice it in as new tail. To
      * dequeue, you just set the head field.
