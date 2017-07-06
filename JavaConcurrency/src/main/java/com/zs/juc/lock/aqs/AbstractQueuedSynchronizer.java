@@ -349,7 +349,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 
     /**
      * Wait queue node class.
-     *
+     *等待队列结点类。
      * <p>
      * The wait queue is a variant of a "CLH" (Craig, Landin, and Hagersten)
      * lock queue. CLH locks are normally used for spinlocks. We instead use
@@ -363,6 +363,17 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      * acquire if it is first in the queue. But being first does not guarantee
      * success; it only gives the right to contend. So the currently released
      * contender thread may need to rewait.
+     *这个等待队列是CLH锁队列的变体，CLH锁是最常见的自旋锁。
+     *我们使用自旋锁为了实现阻塞式同步器，使用相同的策略——持有某个(关于同步器前驱结点中的一个线程的)控制信息(status)。
+     *每个结点的"status"字段跟踪判定一个线程是否应该阻塞。当一个结点的前驱结点释放，这个结点被唤醒。
+     *Each node of the queue otherwise serves as a specific-notification-style
+     * monitor holding a single waiting thread.
+     * status字段不去控制线程是否被授予锁。如果一个线程在队列头部，那么它也许尝试获取锁。
+     * 一个几点在队头并不保证获取锁成功，只是有竞争锁的权利。所以当的竞争者线程也许需要再次等待。
+     * 
+     * 
+     *
+     *
      *
      *这个等待队列是CLH锁队列的一个变体,CLH锁通常被用来当做自旋锁。
      * <p>
@@ -382,6 +393,9 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      * it takes a bit more work for nodes to determine who their successors are,
      * in part to deal with possible cancellation due to timeouts and
      * interrupts.
+     * 插入CLH队列的操作只需要一个对tail的原子性操作，
+     * 所以 there is a simple atomic point of demarcation from unqueued to queued.
+     * 类似的，出队仅仅涉及更新head结点的操作。
      *
      * <p>
      * The "prev" links (not used in original CLH locks), are mainly needed to
@@ -1066,12 +1080,21 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      * Attempts to acquire in exclusive mode. This method should query if the
      * state of the object permits it to be acquired in the exclusive mode, and
      * if so to acquire it.
+     * 
+     * 尝试在排他模式下获取锁。如果这个对象的state变量允许在排他模式下被获取，那么这个方法应该被调用。
+     * 如果是这样就调用这个方法。
      *
      * <p>
      * This method is always invoked by the thread performing acquire. If this
      * method reports failure, the acquire method may queue the thread, if it is
      * not already queued, until it is signalled by a release from some other
      * thread. This can be used to implement method {@link Lock#tryLock()}.
+     *这个方法总是被执行acquire方法的线程调用。如果这个方法返回false，
+     *那么acquire方法也许会把这个线程插入队列(除非当前线程已经入队了)，
+     *直到这个线程被其他某个释放了锁的线程唤醒，才会出队。
+     *
+     *这个方法可以被用来实现 Lock.tryLock()方法
+     *
      *
      * <p>
      * The default implementation throws {@link UnsupportedOperationException}.
@@ -1211,6 +1234,10 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      *            represent anything you like.
      */
     public final void acquire(int arg) {
+        /*
+         * 1.尝试调用tryAcquire()——获取锁。
+         * 
+         */
         if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
             selfInterrupt();
     }
