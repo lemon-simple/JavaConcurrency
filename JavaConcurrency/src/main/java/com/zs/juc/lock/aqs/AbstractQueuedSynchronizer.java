@@ -55,8 +55,7 @@ import sun.misc.Unsafe;
  * Subclasses that support only exclusive or only shared modes need not define
  * the methods supporting the unused mode.
  * 
- * 这个AQS支持两种模式，除了默认的互斥模式还有共享模式,
- * 这两种模式无论是哪一种都是用过使用同一个等待队列来实现的。
+ * 这个AQS支持两种模式，除了默认的互斥模式还有共享模式, 这两种模式无论是哪一种都是用过使用同一个等待队列来实现的。
  * 通常这个类的子类都是实现一种模式，但也有例外比如 {@link ReadWriteLock}.。
  *
  * <p>
@@ -105,8 +104,8 @@ import sun.misc.Unsafe;
  * </ul>
  *
  * 使用AQS需要重新定义如下方法,
- * 通过使用getState()\setState()\compareAndSetStatus()来完成同步变量(state)的观察、跟踪、修改等操作。
- * * <ul>
+ * 通过使用getState()\setState()\compareAndSetStatus()来完成同步变量(state)的观察、跟踪、修改等操作。 *
+ * <ul>
  * <li>{@link #tryAcquire}
  * <li>{@link #tryRelease}
  * <li>{@link #tryAcquireShared}
@@ -121,8 +120,7 @@ import sun.misc.Unsafe;
  * class. All other methods are declared {@code final} because they cannot be
  * independently varied.
  * 
- *实现这些方法要保证内部线程安全、执行快速、无阻塞。
- *实现这些方法是使用这个类的唯一的方式。其他方法都定义为final，不允许修改他们。
+ * 实现这些方法要保证内部线程安全、执行快速、无阻塞。 实现这些方法是使用这个类的唯一的方式。其他方法都定义为final，不允许修改他们。
  *
  * <p>
  * You may also find the inherited methods from
@@ -337,8 +335,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
     }
 
     /**
-     * Wait queue node class.
-     *等待队列结点类。
+     * Wait queue node class. 等待队列结点类。
      * <p>
      * The wait queue is a variant of a "CLH" (Craig, Landin, and Hagersten)
      * lock queue. CLH locks are normally used for spinlocks. We instead use
@@ -351,13 +348,11 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      * control whether threads are granted locks etc though. A thread may try to
      * acquire if it is first in the queue. But being first does not guarantee
      * success; it only gives the right to contend. So the currently released
-     * contender thread may need to rewait.
-     *这个等待队列是CLH锁队列的变体，CLH锁是最常见的自旋锁。
-     *我们使用自旋锁为了实现阻塞式同步器，使用相同的策略——持有某个(关于同步器前驱结点中的一个线程的)控制信息(status)。
-     *每个结点的"status"字段跟踪判定一个线程是否应该阻塞。当一个结点的前驱结点释放，这个结点被唤醒。
-     *Each node of the queue otherwise serves as a specific-notification-style
-     * monitor holding a single waiting thread.
-     * status字段不去控制线程是否被授予锁。如果一个线程在队列头部，那么它也许尝试获取锁。
+     * contender thread may need to rewait. 这个等待队列是CLH锁队列的变体，CLH锁是最常见的自旋锁。
+     * 我们使用自旋锁为了实现阻塞式同步器，使用相同的策略——持有某个(关于同步器前驱结点中的一个线程的)控制信息(status)。
+     * 每个结点的"status"字段跟踪判定一个线程是否应该阻塞。当一个结点的前驱结点释放，这个结点被唤醒。 Each node of the
+     * queue otherwise serves as a specific-notification-style monitor holding a
+     * single waiting thread. status字段不去控制线程是否被授予锁。如果一个线程在队列头部，那么它也许尝试获取锁。
      * 一个几点在队头并不保证获取锁成功，只是有竞争锁的权利。所以当的竞争者线程也许需要再次等待。
      * 
      * 
@@ -380,10 +375,8 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      * queued. Similarly, dequeuing involves only updating the "head". However,
      * it takes a bit more work for nodes to determine who their successors are,
      * in part to deal with possible cancellation due to timeouts and
-     * interrupts.
-     * 插入CLH队列的操作只需要一个对tail的原子性操作，
-     * 所以 there is a simple atomic point of demarcation from unqueued to queued.
-     * 类似的，出队仅仅涉及更新head结点的操作。
+     * interrupts. 插入CLH队列的操作只需要一个对tail的原子性操作， 所以 there is a simple atomic point
+     * of demarcation from unqueued to queued. 类似的，出队仅仅涉及更新head结点的操作。
      *
      * <p>
      * The "prev" links (not used in original CLH locks), are mainly needed to
@@ -743,7 +736,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      */
     private void setHeadAndPropagate(Node node, int propagate) {
         Node h = head; // Record old head for check below
-        setHead(node);
+        setHead(node);//设置为头结点(如 排他获取模式，获取了锁的结点都是头结点)
         /*
          * Try to signal next queued node if: Propagation was indicated by
          * caller, or was recorded (as h.waitStatus either before or after
@@ -756,9 +749,12 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
          * wake-ups, but only when there are multiple racing acquires/releases,
          * so most need signals now or soon anyway.
          */
+        // propagate>0表示后续结点可以共享获取锁
+        // ||h==null表示之前的头结点不存在,队列未初始化||h.waitStatus<0表示之前的头结点取消|| (h = head) ==
+        // null 表示当前结点为空||h.waitStatus < 0)表示当前结点被取消
         if (propagate > 0 || h == null || h.waitStatus < 0 || (h = head) == null || h.waitStatus < 0) {
             Node s = node.next;
-            if (s == null || s.isShared())
+            if (s == null || s.isShared())//后继结点为空或者是共享模式结点
                 doReleaseShared();
         }
     }
@@ -969,15 +965,15 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      * @param arg the acquire argument
      */
     private void doAcquireShared(int arg) {
-        final Node node = addWaiter(Node.SHARED);
+        final Node node = addWaiter(Node.SHARED);// 当前线程构造一个Shared模式的结点
         boolean failed = true;
         try {
             boolean interrupted = false;
             for (;;) {
                 final Node p = node.predecessor();
-                if (p == head) {
-                    int r = tryAcquireShared(arg);
-                    if (r >= 0) {
+                if (p == head) {// 当前结点的前驱结点是否是头结点？
+                    int r = tryAcquireShared(arg);// 如果是头结点,再次尝试获取锁
+                    if (r >= 0) {//获取锁成功
                         setHeadAndPropagate(node, r);
                         p.next = null; // help GC
                         if (interrupted)
@@ -1069,19 +1065,17 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      * state of the object permits it to be acquired in the exclusive mode, and
      * if so to acquire it.
      * 
-     * 尝试在排他模式下获取锁。如果这个对象的state变量允许在排他模式下被获取，那么这个方法应该被调用。
-     * 如果是这样就调用这个方法。
+     * 尝试在排他模式下获取锁。如果这个对象的state变量允许在排他模式下被获取，那么这个方法应该被调用。 如果是这样就调用这个方法。
      *
      * <p>
      * This method is always invoked by the thread performing acquire. If this
      * method reports failure, the acquire method may queue the thread, if it is
      * not already queued, until it is signalled by a release from some other
      * thread. This can be used to implement method {@link Lock#tryLock()}.
-     *这个方法总是被执行acquire方法的线程调用。如果这个方法返回false，
-     *那么acquire方法也许会把这个线程插入队列(除非当前线程已经入队了)，
-     *直到这个线程被其他某个释放了锁的线程唤醒，才会出队。
+     * 这个方法总是被执行acquire方法的线程调用。如果这个方法返回false，
+     * 那么acquire方法也许会把这个线程插入队列(除非当前线程已经入队了)， 直到这个线程被其他某个释放了锁的线程唤醒，才会出队。
      *
-     *这个方法可以被用来实现 Lock.tryLock()方法
+     * 这个方法可以被用来实现 Lock.tryLock()方法
      *
      *
      * <p>
@@ -1155,6 +1149,8 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
      *         three different return values enables this method to be used in
      *         contexts where acquires only sometimes act exclusively.) Upon
      *         success, this object has been acquired.
+     *         返回负数表示失败；0表示当前获取成功，但是后续共享模式不会成功了。
+     *         正数表示当前成功，后续也有可能成功(后续的等待线程必须坚持可用性)。
      * @throws IllegalMonitorStateException if acquiring would place this
      *             synchronizer in an illegal state. This exception must be
      *             thrown in a consistent fashion for synchronization to work
