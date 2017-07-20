@@ -11,34 +11,17 @@ import java.util.concurrent.locks.Lock;
  * Lock 与synchronized功能、语义类似，但是有更强的扩展功能。
  * 
  *
- * <p>
- * A {@code ReentrantLock} is <em>owned</em> by the thread last successfully
- * locking, but not yet unlocking it. A thread invoking {@code lock} will
- * return, successfully acquiring the lock, when the lock is not owned by
- * another thread. The method will return immediately if the current thread
- * already owns the lock. This can be checked using methods
- * {@link #isHeldByCurrentThread}, and {@link #getHoldCount}.
- *
- * <p>
- * The constructor for this class accepts an optional <em>fairness</em>
- * parameter. When set {@code true}, under contention, locks favor granting
- * access to the longest-waiting thread. Otherwise this lock does not guarantee
- * any particular access order. Programs using fair locks accessed by many
- * threads may display lower overall throughput (i.e., are slower; often much
- * slower) than those using the default setting, but have smaller variances in
- * times to obtain locks and guarantee lack of starvation. Note however, that
- * fairness of locks does not guarantee fairness of thread scheduling. Thus, one
- * of many threads using a fair lock may obtain it multiple times in succession
- * while other active threads are not progressing and not currently holding the
- * lock. Also note that the untimed {@link #tryLock()} method does not honor the
- * fairness setting. It will succeed if the lock is available even if other
- * threads are waiting.
- *
- * <p>
- * It is recommended practice to <em>always</em> immediately follow a call to
- * {@code lock} with a {@code try} block, most typically in a before/after
- * construction such as:
- *
+ * 一个线程调用lock方法，成功获取了锁后会立刻返回。
+ * 
+ * 可以通过isHeldByCurrentThread、getHoldCount方法验证。
+ * 
+ * ReentrantLock的构造器接收true、false，分别对应的代表公平锁与非公平锁。
+ * 公平锁会导致较差的吞吐量，比如更慢。但是会保证不存在锁饥饿。默认是使用非公平锁的。但是，要注意公平锁不会保证线程调度的公平。
+ * 那么，使用公平锁时，多线程中的某个线程会多次获取锁成功，然而其他活动的线程不能继续执行也不能持有当前的锁。？？？？？
+ * 另外，tryLock方法无法参与公平锁的公平性，即使其他线程正在等待，如果锁空闲可用，那它会成功获取并返回。
+ * 
+ * 推荐的示例写法如下：
+ * 
  * <pre>
  *  {@code
  * class X {
@@ -55,12 +38,10 @@ import java.util.concurrent.locks.Lock;
  *   }
  * }}
  * </pre>
- *
+ * 
  * <p>
- * In addition to implementing the {@link Lock} interface, this class defines a
- * number of {@code public} and {@code protected} methods for inspecting the
- * state of the lock. Some of these methods are only useful for instrumentation
- * and monitoring.
+ * 这个类实现了Lock接口，这个类定义了一些public方法、protected方法用来观察lock的状态。
+ * 一些其他方法仅仅用来监控和查询某些当前类的数据。
  *
  * <p>
  * Serialization of this class behaves in the same way as built-in locks: a
@@ -76,676 +57,700 @@ import java.util.concurrent.locks.Lock;
  * @author Doug Lea
  */
 public class ReentrantLock implements Lock, java.io.Serializable {
-    private static final long serialVersionUID = 7373984872572414699L;
+	private static final long serialVersionUID = 7373984872572414699L;
 
-    /** Synchronizer providing all implementation mechanics */
-    private final Sync sync;
+	/** Synchronizer providing all implementation mechanics */
+	private final Sync sync;
 
-    /**
-     * Base of synchronization control for this lock. Subclassed into fair and
-     * nonfair versions below. Uses AQS state to represent the number of holds
-     * on the lock.
-     */
-    abstract static class Sync extends AbstractQueuedSynchronizer {
-        private static final long serialVersionUID = -5179523762034025860L;
+	/**
+	 * Base of synchronization control for this lock. Subclassed into fair and
+	 * nonfair versions below. Uses AQS state to represent the number of holds
+	 * on the lock.
+	 */
 
-        /**
-         * Performs {@link Lock#lock}. The main reason for subclassing is to
-         * allow fast path for nonfair version.
-         */
-        abstract void lock();
+	// ------------------------------------------------------Sync------------------------------------------------------
 
-        /**
-         * Performs non-fair tryLock. tryAcquire is implemented in subclasses,
-         * but both need nonfair try for trylock method.
-         */
-        final boolean nonfairTryAcquire(int acquires) {
-            final Thread current = Thread.currentThread();
-            int c = getState();
-            if (c == 0) {
-                if (compareAndSetState(0, acquires)) {
-                    setExclusiveOwnerThread(current);
-                    return true;
-                }
-            } else if (current == getExclusiveOwnerThread()) {
-                int nextc = c + acquires;
-                if (nextc < 0) // overflow
-                    throw new Error("Maximum lock count exceeded");
-                setState(nextc);
-                return true;
-            }
-            return false;
-        }
+	abstract static class Sync extends AbstractQueuedSynchronizer {
+		private static final long serialVersionUID = -5179523762034025860L;
 
-        protected final boolean tryRelease(int releases) {
-            int c = getState() - releases;
-            if (Thread.currentThread() != getExclusiveOwnerThread())
-                throw new IllegalMonitorStateException();
-            boolean free = false;
-            if (c == 0) {
-                free = true;
-                setExclusiveOwnerThread(null);
-            }
-            setState(c);
-            return free;
-        }
+		/**
+		 * Performs {@link Lock#lock}. The main reason for subclassing is to
+		 * allow fast path for nonfair version.
+		 */
+		abstract void lock();
 
-        protected final boolean isHeldExclusively() {
-            // While we must in general read state before owner,
-            // we don't need to do so to check if current thread is owner
-            return getExclusiveOwnerThread() == Thread.currentThread();
-        }
+		/**
+		 * Performs non-fair tryLock. tryAcquire is implemented in subclasses,
+		 * but both need nonfair try for trylock method.
+		 */
+		// 非公平式获取锁，非公平锁barge失败后会执行。lock(非公平模式)、tryLock的实现逻辑
+		final boolean nonfairTryAcquire(int acquires) {
+			final Thread current = Thread.currentThread();
+			int c = getState();
+			if (c == 0) {// 当前锁是否空闲
+				if (compareAndSetState(0, acquires)) {// CAS获取锁
+					setExclusiveOwnerThread(current);
+					return true;
+				}
+			} else if (current == getExclusiveOwnerThread()) {// 如果当前锁被占用，并且是被当前线程占用：
+				int nextc = c + acquires;// 重用次数累加。为什么不考虑原子性操作？因为这段代码确定是同一个线程获取，不存在竞争情况！
+				if (nextc < 0) // overflow
+					throw new Error("Maximum lock count exceeded");
+				setState(nextc);// 更新state状态为当前重入次数
+				return true;
+			}
+			return false;// CAS失败 、也不属于当前线程重入的情况。获取锁失败，返回
+		}
 
-        final ConditionObject newCondition() {
-            return new ConditionObject();
-        }
+		protected final boolean tryRelease(int releases) {
+			int c = getState() - releases;
+			if (Thread.currentThread() != getExclusiveOwnerThread())
+				throw new IllegalMonitorStateException();
+			boolean free = false;
+			if (c == 0) {
+				free = true;
+				setExclusiveOwnerThread(null);
+			}
+			setState(c);
+			return free;
+		}
 
-        // Methods relayed from outer class
+		protected final boolean isHeldExclusively() {
+			// While we must in general read state before owner,
+			// we don't need to do so to check if current thread is owner
+			return getExclusiveOwnerThread() == Thread.currentThread();
+		}
 
-        final Thread getOwner() {
-            return getState() == 0 ? null : getExclusiveOwnerThread();
-        }
+		final ConditionObject newCondition() {
+			return new ConditionObject();
+		}
 
-        final int getHoldCount() {
-            return isHeldExclusively() ? getState() : 0;
-        }
+		// Methods relayed from outer class
 
-        final boolean isLocked() {
-            return getState() != 0;
-        }
+		final Thread getOwner() {
+			return getState() == 0 ? null : getExclusiveOwnerThread();
+		}
 
-        /**
-         * Reconstitutes the instance from a stream (that is, deserializes it).
-         */
-        private void readObject(java.io.ObjectInputStream s) throws java.io.IOException, ClassNotFoundException {
-            s.defaultReadObject();
-            setState(0); // reset to unlocked state
-        }
-    }
+		final int getHoldCount() {
+			return isHeldExclusively() ? getState() : 0;
+		}
 
-    /**
-     * Sync object for non-fair locks
-     */
-    static final class NonfairSync extends Sync {
-        private static final long serialVersionUID = 7316153563782823691L;
+		final boolean isLocked() {
+			return getState() != 0;
+		}
 
-        /**
-         * Performs lock. Try immediate barge, backing up to normal acquire on
-         * failure.
-         */
-        final void lock() {
-            if (compareAndSetState(0, 1))
-                setExclusiveOwnerThread(Thread.currentThread());
-            else
-                acquire(1);
-        }
+		/**
+		 * Reconstitutes the instance from a stream (that is, deserializes it).
+		 */
+		private void readObject(java.io.ObjectInputStream s) throws java.io.IOException, ClassNotFoundException {
+			s.defaultReadObject();
+			setState(0); // reset to unlocked state
+		}
+	}
+	// ------------------------------------------------------Sync------------------------------------------------------
+	//公平模式：实现的tryAcquire，先判断当前线程是否是等待最久的线程，如果是那么就CAS获取锁，或者重入。否则就进入AQS-FIFO队列
+	// 公平锁与非公平锁主要区别在于：tryAcquire的实现上。前者主要是通过CAS强行获取锁，获取失败进入FIFO队列等待；后者获取锁先判断是否“公平”后进行CAS操作，失败后也是进入FIFO队列
+	/**
+	 * Sync object for non-fair locks
+	 */
+	static final class NonfairSync extends Sync {
+		private static final long serialVersionUID = 7316153563782823691L;
 
-        protected final boolean tryAcquire(int acquires) {
-            return nonfairTryAcquire(acquires);
-        }
-    }
+		/**
+		 * Performs lock. Try immediate barge, backing up to normal acquire on
+		 * failure.
+		 */
+		final void lock() {
+			if (compareAndSetState(0, 1))// 非公平锁，CAS,闯入式获取锁
+				setExclusiveOwnerThread(Thread.currentThread());
+			else
+				acquire(1);// barge失败,常规式获取锁,特点就是在tryAcquire中增加了重入累计的逻辑。详细见AQS代码详解。
+		}
 
-    /**
-     * Sync object for fair locks
-     */
-    static final class FairSync extends Sync {
-        private static final long serialVersionUID = -3000897897090466540L;
+		// 实现了AQS的模板方法
+		protected final boolean tryAcquire(int acquires) {
+			return nonfairTryAcquire(acquires);
+		}
+	}
 
-        final void lock() {
-            acquire(1);
-        }
+	/**
+	 * Sync object for fair locks
+	 */
+	static final class FairSync extends Sync {
+		private static final long serialVersionUID = -3000897897090466540L;
 
-        /**
-         * Fair version of tryAcquire. Don't grant access unless recursive call
-         * or no waiters or is first.
-         */
-        protected final boolean tryAcquire(int acquires) {
-            final Thread current = Thread.currentThread();
-            int c = getState();
-            if (c == 0) {
-                if (!hasQueuedPredecessors() && compareAndSetState(0, acquires)) {
-                    setExclusiveOwnerThread(current);
-                    return true;
-                }
-            } else if (current == getExclusiveOwnerThread()) {
-                int nextc = c + acquires;
-                if (nextc < 0)
-                    throw new Error("Maximum lock count exceeded");
-                setState(nextc);
-                return true;
-            }
-            return false;
-        }
-    }
+		final void lock() {
+			acquire(1);
+		}
 
-    /**
-     * Creates an instance of {@code ReentrantLock}. This is equivalent to using
-     * {@code ReentrantLock(false)}.
-     */
-    public ReentrantLock() {
-        sync = new NonfairSync();
-    }
+		/**
+		 * Fair version of tryAcquire. Don't grant access unless recursive call
+		 * or no waiters or is first.
+		 */
+		protected final boolean tryAcquire(int acquires) {
+			final Thread current = Thread.currentThread();
+			int c = getState();
+			if (c == 0) {// 当前锁空闲
+				if (!hasQueuedPredecessors() && compareAndSetState(0, acquires)) {// ！当前线程之前是否还有等待时间更长的结点(也就是說头结点的后继者是否是当前线程)&&CAS获取锁
+					setExclusiveOwnerThread(current);
+					return true;// 满足了公平锁的特点。进入：表示当前线程就是等待最长的线程
+				}
+			} else if (current == getExclusiveOwnerThread()) {//若当前线程被占用，判断是否是当前线程占用，重入。
+				int nextc = c + acquires;
+				if (nextc < 0)
+					throw new Error("Maximum lock count exceeded");
+				setState(nextc);
+				return true;
+			}
+			return false;
+		}
+	}
 
-    /**
-     * Creates an instance of {@code ReentrantLock} with the given fairness
-     * policy.
-     *
-     * @param fair {@code true} if this lock should use a fair ordering policy
-     */
-    public ReentrantLock(boolean fair) {
-        sync = fair ? new FairSync() : new NonfairSync();
-    }
+	/**
+	 * Creates an instance of {@code ReentrantLock}. This is equivalent to using
+	 * {@code ReentrantLock(false)}.
+	 */
+	public ReentrantLock() {
+		sync = new NonfairSync();
+	}
 
-    /**
-     * Acquires the lock.
-     *
-     * <p>
-     * Acquires the lock if it is not held by another thread and returns
-     * immediately, setting the lock hold count to one.
-     *
-     * <p>
-     * If the current thread already holds the lock then the hold count is
-     * incremented by one and the method returns immediately.
-     *
-     * <p>
-     * If the lock is held by another thread then the current thread becomes
-     * disabled for thread scheduling purposes and lies dormant until the lock
-     * has been acquired, at which time the lock hold count is set to one.
-     */
-    public void lock() {
-        sync.lock();
-    }
+	/**
+	 * Creates an instance of {@code ReentrantLock} with the given fairness
+	 * policy.
+	 *
+	 * @param fair
+	 *            {@code true} if this lock should use a fair ordering policy
+	 */
+	public ReentrantLock(boolean fair) {
+		sync = fair ? new FairSync() : new NonfairSync();
+	}
 
-    /**
-     * Acquires the lock unless the current thread is
-     * {@linkplain Thread#interrupt interrupted}.
-     *
-     * <p>
-     * Acquires the lock if it is not held by another thread and returns
-     * immediately, setting the lock hold count to one.
-     *
-     * <p>
-     * If the current thread already holds this lock then the hold count is
-     * incremented by one and the method returns immediately.
-     *
-     * <p>
-     * If the lock is held by another thread then the current thread becomes
-     * disabled for thread scheduling purposes and lies dormant until one of two
-     * things happens:
-     *
-     * <ul>
-     *
-     * <li>The lock is acquired by the current thread; or
-     *
-     * <li>Some other thread {@linkplain Thread#interrupt interrupts} the
-     * current thread.
-     *
-     * </ul>
-     *
-     * <p>
-     * If the lock is acquired by the current thread then the lock hold count is
-     * set to one.
-     *
-     * <p>
-     * If the current thread:
-     *
-     * <ul>
-     *
-     * <li>has its interrupted status set on entry to this method; or
-     *
-     * <li>is {@linkplain Thread#interrupt interrupted} while acquiring the
-     * lock,
-     *
-     * </ul>
-     *
-     * then {@link InterruptedException} is thrown and the current thread's
-     * interrupted status is cleared.
-     *
-     * <p>
-     * In this implementation, as this method is an explicit interruption point,
-     * preference is given to responding to the interrupt over normal or
-     * reentrant acquisition of the lock.
-     *
-     * @throws InterruptedException if the current thread is interrupted
-     */
-    public void lockInterruptibly() throws InterruptedException {
-        sync.acquireInterruptibly(1);
-    }
+	/**
+	 * Acquires the lock.
+	 *
+	 * <p>
+	 * Acquires the lock if it is not held by another thread and returns
+	 * immediately, setting the lock hold count to one.
+	 *
+	 * <p>
+	 * If the current thread already holds the lock then the hold count is
+	 * incremented by one and the method returns immediately.
+	 *
+	 * <p>
+	 * If the lock is held by another thread then the current thread becomes
+	 * disabled for thread scheduling purposes and lies dormant until the lock
+	 * has been acquired, at which time the lock hold count is set to one.
+	 */
+	public void lock() {
+		sync.lock();
+	}
 
-    /**
-     * Acquires the lock only if it is not held by another thread at the time of
-     * invocation.
-     *
-     * <p>
-     * Acquires the lock if it is not held by another thread and returns
-     * immediately with the value {@code true}, setting the lock hold count to
-     * one. Even when this lock has been set to use a fair ordering policy, a
-     * call to {@code tryLock()} <em>will</em> immediately acquire the lock if
-     * it is available, whether or not other threads are currently waiting for
-     * the lock. This &quot;barging&quot; behavior can be useful in certain
-     * circumstances, even though it breaks fairness. If you want to honor the
-     * fairness setting for this lock, then use {@link #tryLock(long, TimeUnit)
-     * tryLock(0, TimeUnit.SECONDS) } which is almost equivalent (it also
-     * detects interruption).
-     *
-     * <p>
-     * If the current thread already holds this lock then the hold count is
-     * incremented by one and the method returns {@code true}.
-     *
-     * <p>
-     * If the lock is held by another thread then this method will return
-     * immediately with the value {@code false}.
-     *
-     * @return {@code true} if the lock was free and was acquired by the current
-     *         thread, or the lock was already held by the current thread; and
-     *         {@code false} otherwise
-     */
-    public boolean tryLock() {
-        return sync.nonfairTryAcquire(1);
-    }
+	/**
+	 * Acquires the lock unless the current thread is
+	 * {@linkplain Thread#interrupt interrupted}.
+	 *
+	 * <p>
+	 * Acquires the lock if it is not held by another thread and returns
+	 * immediately, setting the lock hold count to one.
+	 *
+	 * <p>
+	 * If the current thread already holds this lock then the hold count is
+	 * incremented by one and the method returns immediately.
+	 *
+	 * <p>
+	 * If the lock is held by another thread then the current thread becomes
+	 * disabled for thread scheduling purposes and lies dormant until one of two
+	 * things happens:
+	 *
+	 * <ul>
+	 *
+	 * <li>The lock is acquired by the current thread; or
+	 *
+	 * <li>Some other thread {@linkplain Thread#interrupt interrupts} the
+	 * current thread.
+	 *
+	 * </ul>
+	 *
+	 * <p>
+	 * If the lock is acquired by the current thread then the lock hold count is
+	 * set to one.
+	 *
+	 * <p>
+	 * If the current thread:
+	 *
+	 * <ul>
+	 *
+	 * <li>has its interrupted status set on entry to this method; or
+	 *
+	 * <li>is {@linkplain Thread#interrupt interrupted} while acquiring the
+	 * lock,
+	 *
+	 * </ul>
+	 *
+	 * then {@link InterruptedException} is thrown and the current thread's
+	 * interrupted status is cleared.
+	 *
+	 * <p>
+	 * In this implementation, as this method is an explicit interruption point,
+	 * preference is given to responding to the interrupt over normal or
+	 * reentrant acquisition of the lock.
+	 *
+	 * @throws InterruptedException
+	 *             if the current thread is interrupted
+	 */
+	public void lockInterruptibly() throws InterruptedException {
+		sync.acquireInterruptibly(1);
+	}
 
-    /**
-     * Acquires the lock if it is not held by another thread within the given
-     * waiting time and the current thread has not been
-     * {@linkplain Thread#interrupt interrupted}.
-     *
-     * <p>
-     * Acquires the lock if it is not held by another thread and returns
-     * immediately with the value {@code true}, setting the lock hold count to
-     * one. If this lock has been set to use a fair ordering policy then an
-     * available lock <em>will not</em> be acquired if any other threads are
-     * waiting for the lock. This is in contrast to the {@link #tryLock()}
-     * method. If you want a timed {@code tryLock} that does permit barging on a
-     * fair lock then combine the timed and un-timed forms together:
-     *
-     * <pre>
-     *  {@code
-     * if (lock.tryLock() ||
-     *     lock.tryLock(timeout, unit)) {
-     *   ...
-     * }}
-     * </pre>
-     *
-     * <p>
-     * If the current thread already holds this lock then the hold count is
-     * incremented by one and the method returns {@code true}.
-     *
-     * <p>
-     * If the lock is held by another thread then the current thread becomes
-     * disabled for thread scheduling purposes and lies dormant until one of
-     * three things happens:
-     *
-     * <ul>
-     *
-     * <li>The lock is acquired by the current thread; or
-     *
-     * <li>Some other thread {@linkplain Thread#interrupt interrupts} the
-     * current thread; or
-     *
-     * <li>The specified waiting time elapses
-     *
-     * </ul>
-     *
-     * <p>
-     * If the lock is acquired then the value {@code true} is returned and the
-     * lock hold count is set to one.
-     *
-     * <p>
-     * If the current thread:
-     *
-     * <ul>
-     *
-     * <li>has its interrupted status set on entry to this method; or
-     *
-     * <li>is {@linkplain Thread#interrupt interrupted} while acquiring the
-     * lock,
-     *
-     * </ul>
-     * then {@link InterruptedException} is thrown and the current thread's
-     * interrupted status is cleared.
-     *
-     * <p>
-     * If the specified waiting time elapses then the value {@code false} is
-     * returned. If the time is less than or equal to zero, the method will not
-     * wait at all.
-     *
-     * <p>
-     * In this implementation, as this method is an explicit interruption point,
-     * preference is given to responding to the interrupt over normal or
-     * reentrant acquisition of the lock, and over reporting the elapse of the
-     * waiting time.
-     *
-     * @param timeout the time to wait for the lock
-     * @param unit the time unit of the timeout argument
-     * @return {@code true} if the lock was free and was acquired by the current
-     *         thread, or the lock was already held by the current thread; and
-     *         {@code false} if the waiting time elapsed before the lock could
-     *         be acquired
-     * @throws InterruptedException if the current thread is interrupted
-     * @throws NullPointerException if the time unit is null
-     */
-    public boolean tryLock(long timeout, TimeUnit unit) throws InterruptedException {
-        return sync.tryAcquireNanos(1, unit.toNanos(timeout));
-    }
+	/**
+	 * Acquires the lock only if it is not held by another thread at the time of
+	 * invocation.
+	 *
+	 * <p>
+	 * Acquires the lock if it is not held by another thread and returns
+	 * immediately with the value {@code true}, setting the lock hold count to
+	 * one. Even when this lock has been set to use a fair ordering policy, a
+	 * call to {@code tryLock()} <em>will</em> immediately acquire the lock if
+	 * it is available, whether or not other threads are currently waiting for
+	 * the lock. This &quot;barging&quot; behavior can be useful in certain
+	 * circumstances, even though it breaks fairness. If you want to honor the
+	 * fairness setting for this lock, then use {@link #tryLock(long, TimeUnit)
+	 * tryLock(0, TimeUnit.SECONDS) } which is almost equivalent (it also
+	 * detects interruption).
+	 *
+	 * <p>
+	 * If the current thread already holds this lock then the hold count is
+	 * incremented by one and the method returns {@code true}.
+	 *
+	 * <p>
+	 * If the lock is held by another thread then this method will return
+	 * immediately with the value {@code false}.
+	 *
+	 * @return {@code true} if the lock was free and was acquired by the current
+	 *         thread, or the lock was already held by the current thread; and
+	 *         {@code false} otherwise
+	 */
+	public boolean tryLock() {
+		return sync.nonfairTryAcquire(1);
+	}
 
-    /**
-     * Attempts to release this lock.
-     *
-     * <p>
-     * If the current thread is the holder of this lock then the hold count is
-     * decremented. If the hold count is now zero then the lock is released. If
-     * the current thread is not the holder of this lock then
-     * {@link IllegalMonitorStateException} is thrown.
-     *
-     * @throws IllegalMonitorStateException if the current thread does not hold
-     *             this lock
-     */
-    public void unlock() {
-        sync.release(1);
-    }
+	/**
+	 * Acquires the lock if it is not held by another thread within the given
+	 * waiting time and the current thread has not been
+	 * {@linkplain Thread#interrupt interrupted}.
+	 *
+	 * <p>
+	 * Acquires the lock if it is not held by another thread and returns
+	 * immediately with the value {@code true}, setting the lock hold count to
+	 * one. If this lock has been set to use a fair ordering policy then an
+	 * available lock <em>will not</em> be acquired if any other threads are
+	 * waiting for the lock. This is in contrast to the {@link #tryLock()}
+	 * method. If you want a timed {@code tryLock} that does permit barging on a
+	 * fair lock then combine the timed and un-timed forms together:
+	 *
+	 * <pre>
+	 *  {@code
+	 * if (lock.tryLock() ||
+	 *     lock.tryLock(timeout, unit)) {
+	 *   ...
+	 * }}
+	 * </pre>
+	 *
+	 * <p>
+	 * If the current thread already holds this lock then the hold count is
+	 * incremented by one and the method returns {@code true}.
+	 *
+	 * <p>
+	 * If the lock is held by another thread then the current thread becomes
+	 * disabled for thread scheduling purposes and lies dormant until one of
+	 * three things happens:
+	 *
+	 * <ul>
+	 *
+	 * <li>The lock is acquired by the current thread; or
+	 *
+	 * <li>Some other thread {@linkplain Thread#interrupt interrupts} the
+	 * current thread; or
+	 *
+	 * <li>The specified waiting time elapses
+	 *
+	 * </ul>
+	 *
+	 * <p>
+	 * If the lock is acquired then the value {@code true} is returned and the
+	 * lock hold count is set to one.
+	 *
+	 * <p>
+	 * If the current thread:
+	 *
+	 * <ul>
+	 *
+	 * <li>has its interrupted status set on entry to this method; or
+	 *
+	 * <li>is {@linkplain Thread#interrupt interrupted} while acquiring the
+	 * lock,
+	 *
+	 * </ul>
+	 * then {@link InterruptedException} is thrown and the current thread's
+	 * interrupted status is cleared.
+	 *
+	 * <p>
+	 * If the specified waiting time elapses then the value {@code false} is
+	 * returned. If the time is less than or equal to zero, the method will not
+	 * wait at all.
+	 *
+	 * <p>
+	 * In this implementation, as this method is an explicit interruption point,
+	 * preference is given to responding to the interrupt over normal or
+	 * reentrant acquisition of the lock, and over reporting the elapse of the
+	 * waiting time.
+	 *
+	 * @param timeout
+	 *            the time to wait for the lock
+	 * @param unit
+	 *            the time unit of the timeout argument
+	 * @return {@code true} if the lock was free and was acquired by the current
+	 *         thread, or the lock was already held by the current thread; and
+	 *         {@code false} if the waiting time elapsed before the lock could
+	 *         be acquired
+	 * @throws InterruptedException
+	 *             if the current thread is interrupted
+	 * @throws NullPointerException
+	 *             if the time unit is null
+	 */
+	public boolean tryLock(long timeout, TimeUnit unit) throws InterruptedException {
+		return sync.tryAcquireNanos(1, unit.toNanos(timeout));
+	}
 
-    /**
-     * Returns a {@link Condition} instance for use with this {@link Lock}
-     * instance.
-     *
-     * <p>
-     * The returned {@link Condition} instance supports the same usages as do
-     * the {@link Object} monitor methods ({@link Object#wait() wait},
-     * {@link Object#notify notify}, and {@link Object#notifyAll notifyAll})
-     * when used with the built-in monitor lock.
-     *
-     * <ul>
-     *
-     * <li>If this lock is not held when any of the {@link Condition}
-     * {@linkplain Condition#await() waiting} or {@linkplain Condition#signal
-     * signalling} methods are called, then an
-     * {@link IllegalMonitorStateException} is thrown.
-     *
-     * <li>When the condition {@linkplain Condition#await() waiting} methods are
-     * called the lock is released and, before they return, the lock is
-     * reacquired and the lock hold count restored to what it was when the
-     * method was called.
-     *
-     * <li>If a thread is {@linkplain Thread#interrupt interrupted} while
-     * waiting then the wait will terminate, an {@link InterruptedException}
-     * will be thrown, and the thread's interrupted status will be cleared.
-     *
-     * <li>Waiting threads are signalled in FIFO order.
-     *
-     * <li>The ordering of lock reacquisition for threads returning from waiting
-     * methods is the same as for threads initially acquiring the lock, which is
-     * in the default case not specified, but for <em>fair</em> locks favors
-     * those threads that have been waiting the longest.
-     *
-     * </ul>
-     *
-     * @return the Condition object
-     */
-    public Condition newCondition() {
-        return sync.newCondition();
-    }
+	/**
+	 * Attempts to release this lock.
+	 *
+	 * <p>
+	 * If the current thread is the holder of this lock then the hold count is
+	 * decremented. If the hold count is now zero then the lock is released. If
+	 * the current thread is not the holder of this lock then
+	 * {@link IllegalMonitorStateException} is thrown.
+	 *
+	 * @throws IllegalMonitorStateException
+	 *             if the current thread does not hold this lock
+	 */
+	public void unlock() {
+		sync.release(1);
+	}
 
-    /**
-     * Queries the number of holds on this lock by the current thread.
-     *
-     * <p>
-     * A thread has a hold on a lock for each lock action that is not matched by
-     * an unlock action.
-     *
-     * <p>
-     * The hold count information is typically only used for testing and
-     * debugging purposes. For example, if a certain section of code should not
-     * be entered with the lock already held then we can assert that fact:
-     *
-     * <pre>
-     * {
-     *     &#64;code
-     *     class X {
-     *         ReentrantLock lock = new ReentrantLock();
-     * 
-     *         // ...
-     *         public void m() {
-     *             assert lock.getHoldCount() == 0;
-     *             lock.lock();
-     *             try {
-     *                 // ... method body
-     *             } finally {
-     *                 lock.unlock();
-     *             }
-     *         }
-     *     }
-     * }
-     * </pre>
-     *
-     * @return the number of holds on this lock by the current thread, or zero
-     *         if this lock is not held by the current thread
-     */
-    public int getHoldCount() {
-        return sync.getHoldCount();
-    }
+	/**
+	 * Returns a {@link Condition} instance for use with this {@link Lock}
+	 * instance.
+	 *
+	 * <p>
+	 * The returned {@link Condition} instance supports the same usages as do
+	 * the {@link Object} monitor methods ({@link Object#wait() wait},
+	 * {@link Object#notify notify}, and {@link Object#notifyAll notifyAll})
+	 * when used with the built-in monitor lock.
+	 *
+	 * <ul>
+	 *
+	 * <li>If this lock is not held when any of the {@link Condition}
+	 * {@linkplain Condition#await() waiting} or {@linkplain Condition#signal
+	 * signalling} methods are called, then an
+	 * {@link IllegalMonitorStateException} is thrown.
+	 *
+	 * <li>When the condition {@linkplain Condition#await() waiting} methods are
+	 * called the lock is released and, before they return, the lock is
+	 * reacquired and the lock hold count restored to what it was when the
+	 * method was called.
+	 *
+	 * <li>If a thread is {@linkplain Thread#interrupt interrupted} while
+	 * waiting then the wait will terminate, an {@link InterruptedException}
+	 * will be thrown, and the thread's interrupted status will be cleared.
+	 *
+	 * <li>Waiting threads are signalled in FIFO order.
+	 *
+	 * <li>The ordering of lock reacquisition for threads returning from waiting
+	 * methods is the same as for threads initially acquiring the lock, which is
+	 * in the default case not specified, but for <em>fair</em> locks favors
+	 * those threads that have been waiting the longest.
+	 *
+	 * </ul>
+	 *
+	 * @return the Condition object
+	 */
+	public Condition newCondition() {
+		return sync.newCondition();
+	}
 
-    /**
-     * Queries if this lock is held by the current thread.
-     *
-     * <p>
-     * Analogous to the {@link Thread#holdsLock(Object)} method for built-in
-     * monitor locks, this method is typically used for debugging and testing.
-     * For example, a method that should only be called while a lock is held can
-     * assert that this is the case:
-     *
-     * <pre>
-     * {
-     *     &#64;code
-     *     class X {
-     *         ReentrantLock lock = new ReentrantLock();
-     *         // ...
-     *
-     *         public void m() {
-     *             assert lock.isHeldByCurrentThread();
-     *             // ... method body
-     *         }
-     *     }
-     * }
-     * </pre>
-     *
-     * <p>
-     * It can also be used to ensure that a reentrant lock is used in a
-     * non-reentrant manner, for example:
-     *
-     * <pre>
-     * {
-     *     &#64;code
-     *     class X {
-     *         ReentrantLock lock = new ReentrantLock();
-     *         // ...
-     *
-     *         public void m() {
-     *             assert !lock.isHeldByCurrentThread();
-     *             lock.lock();
-     *             try {
-     *                 // ... method body
-     *             } finally {
-     *                 lock.unlock();
-     *             }
-     *         }
-     *     }
-     * }
-     * </pre>
-     *
-     * @return {@code true} if current thread holds this lock and {@code false}
-     *         otherwise
-     */
-    public boolean isHeldByCurrentThread() {
-        return sync.isHeldExclusively();
-    }
+	/**
+	 * Queries the number of holds on this lock by the current thread.
+	 *
+	 * <p>
+	 * A thread has a hold on a lock for each lock action that is not matched by
+	 * an unlock action.
+	 *
+	 * <p>
+	 * The hold count information is typically only used for testing and
+	 * debugging purposes. For example, if a certain section of code should not
+	 * be entered with the lock already held then we can assert that fact:
+	 *
+	 * <pre>
+	 * {
+	 * 	&#64;code
+	 * 	class X {
+	 * 		ReentrantLock lock = new ReentrantLock();
+	 * 
+	 * 		// ...
+	 * 		public void m() {
+	 * 			assert lock.getHoldCount() == 0;
+	 * 			lock.lock();
+	 * 			try {
+	 * 				// ... method body
+	 * 			} finally {
+	 * 				lock.unlock();
+	 * 			}
+	 * 		}
+	 * 	}
+	 * }
+	 * </pre>
+	 *
+	 * @return the number of holds on this lock by the current thread, or zero
+	 *         if this lock is not held by the current thread
+	 */
+	public int getHoldCount() {
+		return sync.getHoldCount();
+	}
 
-    /**
-     * Queries if this lock is held by any thread. This method is designed for
-     * use in monitoring of the system state, not for synchronization control.
-     *
-     * @return {@code true} if any thread holds this lock and {@code false}
-     *         otherwise
-     */
-    public boolean isLocked() {
-        return sync.isLocked();
-    }
+	/**
+	 * Queries if this lock is held by the current thread.
+	 *
+	 * <p>
+	 * Analogous to the {@link Thread#holdsLock(Object)} method for built-in
+	 * monitor locks, this method is typically used for debugging and testing.
+	 * For example, a method that should only be called while a lock is held can
+	 * assert that this is the case:
+	 *
+	 * <pre>
+	 * {
+	 * 	&#64;code
+	 * 	class X {
+	 * 		ReentrantLock lock = new ReentrantLock();
+	 * 		// ...
+	 *
+	 * 		public void m() {
+	 * 			assert lock.isHeldByCurrentThread();
+	 * 			// ... method body
+	 * 		}
+	 * 	}
+	 * }
+	 * </pre>
+	 *
+	 * <p>
+	 * It can also be used to ensure that a reentrant lock is used in a
+	 * non-reentrant manner, for example:
+	 *
+	 * <pre>
+	 * {
+	 * 	&#64;code
+	 * 	class X {
+	 * 		ReentrantLock lock = new ReentrantLock();
+	 * 		// ...
+	 *
+	 * 		public void m() {
+	 * 			assert !lock.isHeldByCurrentThread();
+	 * 			lock.lock();
+	 * 			try {
+	 * 				// ... method body
+	 * 			} finally {
+	 * 				lock.unlock();
+	 * 			}
+	 * 		}
+	 * 	}
+	 * }
+	 * </pre>
+	 *
+	 * @return {@code true} if current thread holds this lock and {@code false}
+	 *         otherwise
+	 */
+	public boolean isHeldByCurrentThread() {
+		return sync.isHeldExclusively();
+	}
 
-    /**
-     * Returns {@code true} if this lock has fairness set true.
-     *
-     * @return {@code true} if this lock has fairness set true
-     */
-    public final boolean isFair() {
-        return sync instanceof FairSync;
-    }
+	/**
+	 * Queries if this lock is held by any thread. This method is designed for
+	 * use in monitoring of the system state, not for synchronization control.
+	 *
+	 * @return {@code true} if any thread holds this lock and {@code false}
+	 *         otherwise
+	 */
+	public boolean isLocked() {
+		return sync.isLocked();
+	}
 
-    /**
-     * Returns the thread that currently owns this lock, or {@code null} if not
-     * owned. When this method is called by a thread that is not the owner, the
-     * return value reflects a best-effort approximation of current lock status.
-     * For example, the owner may be momentarily {@code null} even if there are
-     * threads trying to acquire the lock but have not yet done so. This method
-     * is designed to facilitate construction of subclasses that provide more
-     * extensive lock monitoring facilities.
-     *
-     * @return the owner, or {@code null} if not owned
-     */
-    protected Thread getOwner() {
-        return sync.getOwner();
-    }
+	/**
+	 * Returns {@code true} if this lock has fairness set true.
+	 *
+	 * @return {@code true} if this lock has fairness set true
+	 */
+	public final boolean isFair() {
+		return sync instanceof FairSync;
+	}
 
-    /**
-     * Queries whether any threads are waiting to acquire this lock. Note that
-     * because cancellations may occur at any time, a {@code true} return does
-     * not guarantee that any other thread will ever acquire this lock. This
-     * method is designed primarily for use in monitoring of the system state.
-     *
-     * @return {@code true} if there may be other threads waiting to acquire the
-     *         lock
-     */
-    public final boolean hasQueuedThreads() {
-        return sync.hasQueuedThreads();
-    }
+	/**
+	 * Returns the thread that currently owns this lock, or {@code null} if not
+	 * owned. When this method is called by a thread that is not the owner, the
+	 * return value reflects a best-effort approximation of current lock status.
+	 * For example, the owner may be momentarily {@code null} even if there are
+	 * threads trying to acquire the lock but have not yet done so. This method
+	 * is designed to facilitate construction of subclasses that provide more
+	 * extensive lock monitoring facilities.
+	 *
+	 * @return the owner, or {@code null} if not owned
+	 */
+	protected Thread getOwner() {
+		return sync.getOwner();
+	}
 
-    /**
-     * Queries whether the given thread is waiting to acquire this lock. Note
-     * that because cancellations may occur at any time, a {@code true} return
-     * does not guarantee that this thread will ever acquire this lock. This
-     * method is designed primarily for use in monitoring of the system state.
-     *
-     * @param thread the thread
-     * @return {@code true} if the given thread is queued waiting for this lock
-     * @throws NullPointerException if the thread is null
-     */
-    public final boolean hasQueuedThread(Thread thread) {
-        return sync.isQueued(thread);
-    }
+	/**
+	 * Queries whether any threads are waiting to acquire this lock. Note that
+	 * because cancellations may occur at any time, a {@code true} return does
+	 * not guarantee that any other thread will ever acquire this lock. This
+	 * method is designed primarily for use in monitoring of the system state.
+	 *
+	 * @return {@code true} if there may be other threads waiting to acquire the
+	 *         lock
+	 */
+	public final boolean hasQueuedThreads() {
+		return sync.hasQueuedThreads();
+	}
 
-    /**
-     * Returns an estimate of the number of threads waiting to acquire this
-     * lock. The value is only an estimate because the number of threads may
-     * change dynamically while this method traverses internal data structures.
-     * This method is designed for use in monitoring of the system state, not
-     * for synchronization control.
-     *
-     * @return the estimated number of threads waiting for this lock
-     */
-    public final int getQueueLength() {
-        return sync.getQueueLength();
-    }
+	/**
+	 * Queries whether the given thread is waiting to acquire this lock. Note
+	 * that because cancellations may occur at any time, a {@code true} return
+	 * does not guarantee that this thread will ever acquire this lock. This
+	 * method is designed primarily for use in monitoring of the system state.
+	 *
+	 * @param thread
+	 *            the thread
+	 * @return {@code true} if the given thread is queued waiting for this lock
+	 * @throws NullPointerException
+	 *             if the thread is null
+	 */
+	public final boolean hasQueuedThread(Thread thread) {
+		return sync.isQueued(thread);
+	}
 
-    /**
-     * Returns a collection containing threads that may be waiting to acquire
-     * this lock. Because the actual set of threads may change dynamically while
-     * constructing this result, the returned collection is only a best-effort
-     * estimate. The elements of the returned collection are in no particular
-     * order. This method is designed to facilitate construction of subclasses
-     * that provide more extensive monitoring facilities.
-     *
-     * @return the collection of threads
-     */
-    protected Collection<Thread> getQueuedThreads() {
-        return sync.getQueuedThreads();
-    }
+	/**
+	 * Returns an estimate of the number of threads waiting to acquire this
+	 * lock. The value is only an estimate because the number of threads may
+	 * change dynamically while this method traverses internal data structures.
+	 * This method is designed for use in monitoring of the system state, not
+	 * for synchronization control.
+	 *
+	 * @return the estimated number of threads waiting for this lock
+	 */
+	public final int getQueueLength() {
+		return sync.getQueueLength();
+	}
 
-    /**
-     * Queries whether any threads are waiting on the given condition associated
-     * with this lock. Note that because timeouts and interrupts may occur at
-     * any time, a {@code true} return does not guarantee that a future
-     * {@code signal} will awaken any threads. This method is designed primarily
-     * for use in monitoring of the system state.
-     *
-     * @param condition the condition
-     * @return {@code true} if there are any waiting threads
-     * @throws IllegalMonitorStateException if this lock is not held
-     * @throws IllegalArgumentException if the given condition is not associated
-     *             with this lock
-     * @throws NullPointerException if the condition is null
-     */
-    public boolean hasWaiters(Condition condition) {
-        if (condition == null)
-            throw new NullPointerException();
-        if (!(condition instanceof AbstractQueuedSynchronizer.ConditionObject))
-            throw new IllegalArgumentException("not owner");
-        return sync.hasWaiters((AbstractQueuedSynchronizer.ConditionObject) condition);
-    }
+	/**
+	 * Returns a collection containing threads that may be waiting to acquire
+	 * this lock. Because the actual set of threads may change dynamically while
+	 * constructing this result, the returned collection is only a best-effort
+	 * estimate. The elements of the returned collection are in no particular
+	 * order. This method is designed to facilitate construction of subclasses
+	 * that provide more extensive monitoring facilities.
+	 *
+	 * @return the collection of threads
+	 */
+	protected Collection<Thread> getQueuedThreads() {
+		return sync.getQueuedThreads();
+	}
 
-    /**
-     * Returns an estimate of the number of threads waiting on the given
-     * condition associated with this lock. Note that because timeouts and
-     * interrupts may occur at any time, the estimate serves only as an upper
-     * bound on the actual number of waiters. This method is designed for use in
-     * monitoring of the system state, not for synchronization control.
-     *
-     * @param condition the condition
-     * @return the estimated number of waiting threads
-     * @throws IllegalMonitorStateException if this lock is not held
-     * @throws IllegalArgumentException if the given condition is not associated
-     *             with this lock
-     * @throws NullPointerException if the condition is null
-     */
-    public int getWaitQueueLength(Condition condition) {
-        if (condition == null)
-            throw new NullPointerException();
-        if (!(condition instanceof AbstractQueuedSynchronizer.ConditionObject))
-            throw new IllegalArgumentException("not owner");
-        return sync.getWaitQueueLength((AbstractQueuedSynchronizer.ConditionObject) condition);
-    }
+	/**
+	 * Queries whether any threads are waiting on the given condition associated
+	 * with this lock. Note that because timeouts and interrupts may occur at
+	 * any time, a {@code true} return does not guarantee that a future
+	 * {@code signal} will awaken any threads. This method is designed primarily
+	 * for use in monitoring of the system state.
+	 *
+	 * @param condition
+	 *            the condition
+	 * @return {@code true} if there are any waiting threads
+	 * @throws IllegalMonitorStateException
+	 *             if this lock is not held
+	 * @throws IllegalArgumentException
+	 *             if the given condition is not associated with this lock
+	 * @throws NullPointerException
+	 *             if the condition is null
+	 */
+	public boolean hasWaiters(Condition condition) {
+		if (condition == null)
+			throw new NullPointerException();
+		if (!(condition instanceof AbstractQueuedSynchronizer.ConditionObject))
+			throw new IllegalArgumentException("not owner");
+		return sync.hasWaiters((AbstractQueuedSynchronizer.ConditionObject) condition);
+	}
 
-    /**
-     * Returns a collection containing those threads that may be waiting on the
-     * given condition associated with this lock. Because the actual set of
-     * threads may change dynamically while constructing this result, the
-     * returned collection is only a best-effort estimate. The elements of the
-     * returned collection are in no particular order. This method is designed
-     * to facilitate construction of subclasses that provide more extensive
-     * condition monitoring facilities.
-     *
-     * @param condition the condition
-     * @return the collection of threads
-     * @throws IllegalMonitorStateException if this lock is not held
-     * @throws IllegalArgumentException if the given condition is not associated
-     *             with this lock
-     * @throws NullPointerException if the condition is null
-     */
-    protected Collection<Thread> getWaitingThreads(Condition condition) {
-        if (condition == null)
-            throw new NullPointerException();
-        if (!(condition instanceof AbstractQueuedSynchronizer.ConditionObject))
-            throw new IllegalArgumentException("not owner");
-        return sync.getWaitingThreads((AbstractQueuedSynchronizer.ConditionObject) condition);
-    }
+	/**
+	 * Returns an estimate of the number of threads waiting on the given
+	 * condition associated with this lock. Note that because timeouts and
+	 * interrupts may occur at any time, the estimate serves only as an upper
+	 * bound on the actual number of waiters. This method is designed for use in
+	 * monitoring of the system state, not for synchronization control.
+	 *
+	 * @param condition
+	 *            the condition
+	 * @return the estimated number of waiting threads
+	 * @throws IllegalMonitorStateException
+	 *             if this lock is not held
+	 * @throws IllegalArgumentException
+	 *             if the given condition is not associated with this lock
+	 * @throws NullPointerException
+	 *             if the condition is null
+	 */
+	public int getWaitQueueLength(Condition condition) {
+		if (condition == null)
+			throw new NullPointerException();
+		if (!(condition instanceof AbstractQueuedSynchronizer.ConditionObject))
+			throw new IllegalArgumentException("not owner");
+		return sync.getWaitQueueLength((AbstractQueuedSynchronizer.ConditionObject) condition);
+	}
 
-    /**
-     * Returns a string identifying this lock, as well as its lock state. The
-     * state, in brackets, includes either the String {@code "Unlocked"} or the
-     * String {@code "Locked by"} followed by the {@linkplain Thread#getName
-     * name} of the owning thread.
-     *
-     * @return a string identifying this lock, as well as its lock state
-     */
-    public String toString() {
-        Thread o = sync.getOwner();
-        return super.toString() + ((o == null) ? "[Unlocked]" : "[Locked by thread " + o.getName() + "]");
-    }
+	/**
+	 * Returns a collection containing those threads that may be waiting on the
+	 * given condition associated with this lock. Because the actual set of
+	 * threads may change dynamically while constructing this result, the
+	 * returned collection is only a best-effort estimate. The elements of the
+	 * returned collection are in no particular order. This method is designed
+	 * to facilitate construction of subclasses that provide more extensive
+	 * condition monitoring facilities.
+	 *
+	 * @param condition
+	 *            the condition
+	 * @return the collection of threads
+	 * @throws IllegalMonitorStateException
+	 *             if this lock is not held
+	 * @throws IllegalArgumentException
+	 *             if the given condition is not associated with this lock
+	 * @throws NullPointerException
+	 *             if the condition is null
+	 */
+	protected Collection<Thread> getWaitingThreads(Condition condition) {
+		if (condition == null)
+			throw new NullPointerException();
+		if (!(condition instanceof AbstractQueuedSynchronizer.ConditionObject))
+			throw new IllegalArgumentException("not owner");
+		return sync.getWaitingThreads((AbstractQueuedSynchronizer.ConditionObject) condition);
+	}
+
+	/**
+	 * Returns a string identifying this lock, as well as its lock state. The
+	 * state, in brackets, includes either the String {@code "Unlocked"} or the
+	 * String {@code "Locked by"} followed by the {@linkplain Thread#getName
+	 * name} of the owning thread.
+	 *
+	 * @return a string identifying this lock, as well as its lock state
+	 */
+	public String toString() {
+		Thread o = sync.getOwner();
+		return super.toString() + ((o == null) ? "[Unlocked]" : "[Locked by thread " + o.getName() + "]");
+	}
 }
