@@ -114,68 +114,62 @@ public class MutexLock implements Lock {
         final MutexLock mutexLock = new MutexLock();
         // ---------------------------------Task one:
         new Thread(new Runnable() {
-
             @Override
             public void run() {
                 while (!Thread.interrupted()) {
-                    if (mutexLock.tryLock()) {
-                        try {
-                            System.out.println(Thread.currentThread().getName() + " acquired successfully!");
-                            TimeUnit.SECONDS.sleep(2);
-                            System.out.println(Thread.currentThread().getName() + " done!");
-
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        } finally {
-                            mutexLock.unlock();
-                        }
-                        break;
+                    try {
+                        TimeUnit.SECONDS.sleep(3);
+                        mutexLock.lock();
+                        System.out.println(Thread.currentThread().getName() + " acquired successfully!");
+                        System.out.println(Thread.currentThread().getName() + " done!");
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } finally {
+                        mutexLock.unlock();
                     }
+                    break;
                 }
             }
         }, "Task one").start();
         // --------------------------------- Task two:
         new Thread(new Runnable() {
-
             @Override
             public void run() {
                 while (!Thread.interrupted()) {
-                    if (mutexLock.tryLock()) {
-                        try {
-                            System.out.println(Thread.currentThread().getName() + " acquired successfully!");
-                            TimeUnit.SECONDS.sleep(2);
-                            System.out.println(Thread.currentThread().getName() + " done!");
+                    try {
+                        TimeUnit.SECONDS.sleep(2);
+                        mutexLock.lock();
+                        System.out.println(Thread.currentThread().getName() + " acquired successfully!");
 
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        } finally {
-                            mutexLock.unlock();
-                        }
-                        break;
+                        System.out.println(Thread.currentThread().getName() + " done!");
+
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } finally {
+                        mutexLock.unlock();
                     }
+                    break;
                 }
             }
         }, "Task two").start();
         // --------------------------------- Task three:
         new Thread(new Runnable() {
-
             @Override
             public void run() {
                 while (!Thread.interrupted()) {
-                    if (mutexLock.tryLock()) {
+                    try {
+                        TimeUnit.SECONDS.sleep(1);
+                        mutexLock.lock();
+                        System.out.println(Thread.currentThread().getName() + " acquired successfully!");
 
-                        try {
-                            System.out.println(Thread.currentThread().getName() + " acquired successfully!");
-                            TimeUnit.SECONDS.sleep(2);
-                            System.out.println(Thread.currentThread().getName() + " done!");
+                        System.out.println(Thread.currentThread().getName() + " done!");
 
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        } finally {
-                            mutexLock.unlock();
-                        }
-                        break;
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } finally {
+                        mutexLock.unlock();
                     }
+                    break;
                 }
             }
         }, "Task three").start();
