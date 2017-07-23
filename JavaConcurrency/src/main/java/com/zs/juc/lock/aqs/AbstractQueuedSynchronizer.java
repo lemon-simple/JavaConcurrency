@@ -539,6 +539,12 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 * waiting on conditions. They are then transferred to the queue to
 		 * re-acquire. And because conditions can only be exclusive, we save a
 		 * field by using special value to indicate shared mode.
+		 * 这个引用指向下一个在conditon上等待的结点或者指向Shared结点。
+		 * 因为conditon队列结点访问的前提是先要获取排他锁，所以我们需要一个简单的连接队列去维护等待在conditon上的各个结点。
+		 * 随后他们被转移到sync队列中去再次获取锁。
+		 * 并且，因为conditon使用只能在排他模式中所以我们通过使用特殊值Shared保留一个field,用来暗指共享模式。
+		 * 
+		 * 
 		 */
 		Node nextWaiter;
 
@@ -1753,7 +1759,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 	/**
 	 * Transfers a node from a condition queue onto sync queue. Returns true if
 	 * successful.
-	 * 
+	 * 将一个节点从条件队列转移到同步队列上
 	 * @param node
 	 *            the node
 	 * @return true if successfully transferred (else the node was cancelled
@@ -1763,7 +1769,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		/*
 		 * If cannot change waitStatus, the node has been cancelled.
 		 */
-		if (!compareAndSetWaitStatus(node, Node.CONDITION, 0))
+		if (!compareAndSetWaitStatus(node, Node.CONDITION, 0))//改变结点状态 
 			return false;
 
 		/*
@@ -1771,10 +1777,12 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 * indicate that thread is (probably) waiting. If cancelled or attempt
 		 * to set waitStatus fails, wake up to resync (in which case the
 		 * waitStatus can be transiently and harmlessly wrong).
+		 * 拼接到队列中并且尝试设置前驱结点的waitStatus状态，用来表示线程在等待状态。
+		 * 如果结点取消了或者尝试设置waitStatus失败，唤醒以再次同步
 		 */
-		Node p = enq(node);
+		Node p = enq(node);//结点插入sync队列尾部
 		int ws = p.waitStatus;
-		if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
+		if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))//是取消状态||设置为Signal态没有成功（保证这个结点在sync队列中能够被唤醒）
 			LockSupport.unpark(node.thread);
 		return true;
 	}
@@ -1813,11 +1821,11 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 	final int fullyRelease(Node node) {
 		boolean failed = true;
 		try {
-			int savedState = getState();
-			if (release(savedState)) {
+			int savedState = getState();// 应该>=1存在重入情况
+			if (release(savedState)) {// CAS获取锁-修改state并唤醒后继结点
 				failed = false;
 				return savedState;
-			} else {
+			} else {// 调用condition之前没有获取锁
 				throw new IllegalMonitorStateException();
 			}
 		} finally {
@@ -1949,17 +1957,20 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		/**
 		 * Adds a new waiter to wait queue.
 		 * 
+		 * 增加新结点进入condition队列中 单向队列
+		 * 
 		 * @return its new wait node
 		 */
 		private Node addConditionWaiter() {
 			Node t = lastWaiter;
 			// If lastWaiter is cancelled, clean out.
-			if (t != null && t.waitStatus != Node.CONDITION) {
-				unlinkCancelledWaiters();
-				t = lastWaiter;
+			// 也就是说结点为null或者waitStatus状态不为condition,就认为该结点无效
+			if (t != null && t.waitStatus != Node.CONDITION) {// ???
+				unlinkCancelledWaiters();// ???
+				t = lastWaiter;// lastWaiter可能发生改变，再次更新
 			}
 			Node node = new Node(Thread.currentThread(), Node.CONDITION);
-			if (t == null)
+			if (t == null)// 首次进入t==null
 				firstWaiter = node;
 			else
 				t.nextWaiter = node;
@@ -1977,10 +1988,10 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 */
 		private void doSignal(Node first) {
 			do {
-				if ((firstWaiter = first.nextWaiter) == null)
+				if ((firstWaiter = first.nextWaiter) == null)//
 					lastWaiter = null;
-				first.nextWaiter = null;
-			} while (!transferForSignal(first) && (first = firstWaiter) != null);
+				first.nextWaiter = null;//从conditon队列中移除这个结点(Node first)
+			} while (!transferForSignal(first) && (first = firstWaiter) != null);//加入到sync队列尾部失败 && 结点移除失败
 		}
 
 		/**
@@ -2009,17 +2020,21 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 * cancellations occur in the absence of signals. It traverses all nodes
 		 * rather than stopping at a particular target to unlink all pointers to
 		 * garbage nodes without requiring many re-traversals during
-		 * cancellation storms.
+		 * cancellation storms 从condition队列中通过取消结点链接将取消的结点移除队列。 此方法只能在锁获取后调用。
+		 * 这个方法一般在Condition wait结点取消时被调用,并且当lastWaiter被认为已经取消则插入一个新的等待结点。
+		 * 这个方法需要去避免垃圾保留，当始终没有signal出现的时候。
+		 * 所以即使这个方法可能需要一个全部遍历的动作，这个方法仅仅在超时或者没有signal导致的取消时才发挥作用。 这个方法遍历所有节点。
 		 */
 		private void unlinkCancelledWaiters() {
 			Node t = firstWaiter;
 			Node trail = null;
+			// t是Condition队列的头结点，开始从头结点遍历所有节点，剔除取消的节点
 			while (t != null) {
-				Node next = t.nextWaiter;
-				if (t.waitStatus != Node.CONDITION) {
-					t.nextWaiter = null;
-					if (trail == null)
-						firstWaiter = next;
+				Node next = t.nextWaiter;// next one
+				if (t.waitStatus != Node.CONDITION) {// 如果是被取消的节点
+					t.nextWaiter = null;// 取消这个结点与后继结点的连接关系
+					if (trail == null)// 第一次肯定是true,仅用来判断头结点
+						firstWaiter = next;// 如果第一次，也就是说头结点取消了，那么将头结点替换掉。
 					else
 						trail.nextWaiter = next;
 					if (next == null)
@@ -2135,18 +2150,25 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		public final void await() throws InterruptedException {
 			if (Thread.interrupted())
 				throw new InterruptedException();
-			Node node = addConditionWaiter();
-			int savedState = fullyRelease(node);
+			Node node = addConditionWaiter();// 向condition队尾增加一个condition结点
+			int savedState = fullyRelease(node);// 释放锁并且唤醒等待这个锁的后继结点，并返回这个结点进入await方法时锁的状态(正常情况下应该是>=1的)
 			int interruptMode = 0;
+
+			// 释放完毕后，遍历AQS的队列，看当前节点是否在队列中，
+			// 不在 说明它还没有竞争锁的资格，所以继续将自己沉睡。
+			// 直到它被加入到队列中，
+			// 在singal的时候加入不就可以了
+			//没有在sync队列中等待的结点(不包含sync的头结点)，也就是说阻塞当前线程
 			while (!isOnSyncQueue(node)) {
-				LockSupport.park(this);
+				LockSupport.park(this);// 如果当前结点在conditon中不在sync队列中,阻塞
 				if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
 					break;
 			}
-			if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
-				interruptMode = REINTERRUPT;
+			// 当收到另外一个线程的signal信号后,继续执行下列逻辑,重新开始正式竞争锁。同样，如果竞争不到还是会将自己沉睡，等待唤醒重新开始竞争。
+			if (acquireQueued(node, savedState) && interruptMode != THROW_IE)// 当前线程再次获取锁&&不需要抛出异常
+				interruptMode = REINTERRUPT;// 如果获取锁acquireQueued时返回true表示该线程被中断过
 			if (node.nextWaiter != null) // clean up if cancelled
-				unlinkCancelledWaiters();
+				unlinkCancelledWaiters();// 清理下条件队列中的不是在等待条件的节点
 			if (interruptMode != 0)
 				reportInterruptAfterWait(interruptMode);
 		}
@@ -2250,9 +2272,9 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 */
 		public final boolean await(long time, TimeUnit unit) throws InterruptedException {
 			long nanosTimeout = unit.toNanos(time);
-			if (Thread.interrupted())
+			if (Thread.interrupted())// 允许响应中断
 				throw new InterruptedException();
-			Node node = addConditionWaiter();
+			Node node = addConditionWaiter();// 构造结点
 			int savedState = fullyRelease(node);
 			final long deadline = System.nanoTime() + nanosTimeout;
 			boolean timedout = false;
