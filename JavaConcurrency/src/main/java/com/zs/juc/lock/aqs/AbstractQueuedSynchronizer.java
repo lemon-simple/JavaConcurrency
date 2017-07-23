@@ -1952,9 +1952,9 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 * @return its new wait node
 		 */
 		private Node addConditionWaiter() {
-			Node t = lastWaiter;
+			Node t = lastWaiter;//condtiton队列总的尾部结点
 			// If lastWaiter is cancelled, clean out.
-			if (t != null && t.waitStatus != Node.CONDITION) {
+			if (t != null && t.waitStatus != Node.CONDITION) {//Node.CONDITION表示线程在condition等待
 				unlinkCancelledWaiters();
 				t = lastWaiter;
 			}
@@ -2010,16 +2010,19 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 * rather than stopping at a particular target to unlink all pointers to
 		 * garbage nodes without requiring many re-traversals during
 		 * cancellation storms.
+		 * 将取消的waiter结点从condition队列中移除。
+		 * 该方法调用的前提是当前线程获取到了锁。
+		 * 当Condition结点在等待并且插入了一个新的等待结点，最后一个结点已经取消时这个方法被调用。
 		 */
 		private void unlinkCancelledWaiters() {
 			Node t = firstWaiter;
 			Node trail = null;
-			while (t != null) {
-				Node next = t.nextWaiter;
-				if (t.waitStatus != Node.CONDITION) {
-					t.nextWaiter = null;
+			while (t != null) {//首结点不为空
+				Node next = t.nextWaiter;//首结点的后继结点
+				if (t.waitStatus != Node.CONDITION) {//首结点状态不为condition时
+					t.nextWaiter = null;//从队列中切断连接
 					if (trail == null)
-						firstWaiter = next;
+						firstWaiter = next;//后继结点变为首节点。
 					else
 						trail.nextWaiter = next;
 					if (next == null)
@@ -2119,7 +2122,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		}
 
 		/**
-		 * Implements interruptible condition wait.
+		 * 实现了可中断的条件等待
 		 * <ol>
 		 * <li>If current thread is interrupted, throw InterruptedException.
 		 * <li>Save lock state returned by {@link #getState}.
@@ -2133,7 +2136,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 * </ol>
 		 */
 		public final void await() throws InterruptedException {
-			if (Thread.interrupted())
+			if (Thread.interrupted())//中断响应
 				throw new InterruptedException();
 			Node node = addConditionWaiter();
 			int savedState = fullyRelease(node);

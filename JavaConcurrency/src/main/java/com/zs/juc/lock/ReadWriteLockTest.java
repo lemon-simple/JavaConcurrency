@@ -1,107 +1,127 @@
 package com.zs.juc.lock;
 
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
 
 public class ReadWriteLockTest {
-	public static void main(String[] args) throws InterruptedException {
 
-		// test();
-		// testExtractCounter();
-		// testThreadLocalReference();
+    private volatile boolean cacheValid = false;
 
-		// 构造FIFO队列：|readLock-lock|writeLo-ck-lock|readLock-lock|readLock-lock|
-		java.util.concurrent.locks.ReentrantReadWriteLock wrLock = new java.util.concurrent.locks.ReentrantReadWriteLock();
+    private int currentValue = 0;
 
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				System.out.println("01");
-				wrLock.readLock().lock();
-				wait_time();
-				wrLock.readLock().unlock();
-				System.out.println("01 end");
-			}
-		}, "01 to readLock lock").start();
+    private ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
-		wait_time(1000);
+    private Lock readLock = lock.readLock();
 
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				System.out.println("02");
-				wrLock.writeLock().lock();
-				wait_time(1000);
-				wrLock.writeLock().unlock();
-				System.out.println("02 end");
-			}
-		}, "02 to writeLock lock").start();
+    private Lock writeLock = lock.writeLock();
 
-		wait_time();
+    /**
+     * 测试用例
+     * @throws InterruptedException
+     */
+    public void testLockDowngrading() throws InterruptedException {
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch end = new CountDownLatch(2);
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(10, 10, 100, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<Runnable>(10));
+        for (int i = 0; i < 2; i++) {
+            int finalI = i;
+            executor.execute(new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    Thread.currentThread().setName("thread-" + finalI);
+                    try {
+                        start.await();
+                        TimeUnit.SECONDS.sleep(finalI);
+                        System.out.println(
+                                "after sleep " + finalI + " seconds, excute " + Thread.currentThread().getName());
+                        cacheValid = false;
+                        processCachedData(finalI);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } finally {
+                        end.countDown();
+                    }
 
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				System.out.println("03");
-				wrLock.readLock().lock();
-				wait_time();
-				wrLock.readLock().unlock();
-				System.out.println("03 end");
-			}
-		}, "03 to readLock lock").start();
+                }
+            }));
+        }
+        start.countDown();
+        end.await();
 
-		wait_time();
+    }
 
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				System.out.println("04");
-				wrLock.readLock().lock();
-				wait_time();
-				wrLock.readLock().unlock();
-				System.out.println("04 end");
-			}
-		}, "04 to readLock lock").start();
+    /**
+     * 锁降级过程
+     * @param num
+     */
+    private void processCachedDataDownGrading(int num) {
+        readLock.lock();
+        if (!cacheValid) {
+            // 必须先释放写锁
+            readLock.unlock();
+            writeLock.lock();
+            try {
+                // 在更新数据之前做二次检查
+                if (!cacheValid) {
+                    System.out.println(Thread.currentThread().getName() + " has updated!");
+                    // 将数据更新为和线程值相同，以便验证数据
+                    currentValue = num;
+                    cacheValid = true;
+                    readLock.lock();
+                }
+            } finally {
+                writeLock.unlock();
+            }
 
-		wait_time();
+        }
 
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				System.out.println("05");
-				wrLock.readLock().lock();
-				wait_time(100);
-				wrLock.readLock().unlock();
-				System.out.println("05 end");
-			}
-		}, "05 to readLock lock").start();
+        try {
+            // 模拟5秒的处理时间，并打印出当前值，在这个过程中cacheValid可能被其他线程修改，锁降级保证其他线程写锁被阻塞，数据不被改变
+            TimeUnit.SECONDS.sleep(5);
+            System.out.println(Thread.currentThread().getName() + ": " + currentValue);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            if (lock.getReadHoldCount() > 0) {
+                readLock.unlock();
+            }
+        }
+    }
 
-		wait_time();
-
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				System.out.println("06");
-				wrLock.writeLock().lock();
-				wait_time();
-				wrLock.writeLock().unlock();
-				System.out.println("06 end");
-			}
-		}, "06 to writeLock lock").start();
-		System.out.println("main thread end");
-	}
-
-	private static void wait_time(int s) {
-		System.out.println("[" + Thread.currentThread().getName() + Thread.currentThread().getId() + "   ]sleep start");
-		try {
-			TimeUnit.MILLISECONDS.sleep(s);
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
-		System.out.println("[" + Thread.currentThread().getName() + Thread.currentThread().getId() + "   ]sleep end");
-	}
-
-	private static void wait_time() {
-		wait_time(30);
-	}
+    /**
+     * 无锁降级的过程
+     * @param num
+     */
+    private void processCachedData(int num) {
+        readLock.lock();
+        if (!cacheValid) {
+            readLock.unlock();
+            writeLock.lock();
+            try {
+                if (!cacheValid) {
+                    System.out.println(Thread.currentThread().getName() + " has updated!");
+                    currentValue = num;
+                    cacheValid = true;
+                }
+            } finally {
+                writeLock.unlock();
+            }
+        }
+        try {
+            // 模拟5秒的处理时间，并打印出当前值，在这个过程中cacheValid可能被其他线程修改，无锁降级过程，其他线程此时可能获取写锁，并更改书数据，导致后面的数据错误
+            TimeUnit.SECONDS.sleep(5);
+            System.out.println(Thread.currentThread().getName() + ": " + currentValue);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            if (lock.getReadHoldCount() > 0) {
+                readLock.unlock();
+            }
+        }
+    }
 
 }
