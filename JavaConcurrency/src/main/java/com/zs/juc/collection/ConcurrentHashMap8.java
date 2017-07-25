@@ -1,3 +1,12 @@
+/*
+ * 
+ * http://ifeve.com/java8-local-caching/
+ * 
+ * http://www.cnblogs.com/huaizuo/p/5413069.html
+ * 
+ * http://blog.csdn.net/u010723709/article/details/48007881
+ */
+
 package com.zs.juc.collection;
 
 import java.io.ObjectStreamField;
@@ -722,6 +731,16 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
      * the initial table size to use upon creation, or 0 for default. After
      * initialization, holds the next element count value upon which to resize
      * the table.
+     * 
+     * 负数： -1:表示初始化
+     * 
+     * <pre>
+     * -N:表示有N-1个线程正在进行扩容操作 表示有N-1个线程正在进行扩容操作
+     * 
+     * <pre>
+     * 正数或0:表示hash表还没有被初始化，这个数值表示初始化或下一次进行扩容的大小，这一点类似于扩容阈值的概念。
+     * 还后面可以看到，它的值始终是当前ConcurrentHashMap容量的0.75倍，这与loadfactor是对应的。
+     * 
      */
     private transient volatile int sizeCtl;
 
@@ -938,12 +957,12 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
     final V putVal(K key, V value, boolean onlyIfAbsent) {
         if (key == null || value == null)
             throw new NullPointerException();
-        int hash = spread(key.hashCode());
+        int hash = spread(key.hashCode());// 对key的高低位进行处理
         int binCount = 0;
         for (Node<K, V>[] tab = table;;) {
             Node<K, V> f;
             int n, i, fh;
-            if (tab == null || (n = tab.length) == 0)
+            if (tab == null || (n = tab.length) == 0)// n是tab
                 tab = initTable();
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
                 if (casTabAt(tab, i, null, new Node<K, V>(hash, key, value, null)))
