@@ -2,24 +2,29 @@ package com.zs.juc.collection;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public class ConcurrentHashMapTest {
     private static final int MAXIMUM_CAPACITY = 1 << 30;
 
-    public static void main(String[] args) {
-        System.out.println(tableSizeFor(9));
-
+    public static void main(String[] args) throws InterruptedException {
+        System.out.println((16 >>> 2));
+        //
+        @SuppressWarnings("unused")
         Map<String, String> cm = new ConcurrentHashMap<String, String>();
-
-        System.out.println(cm.get("java.lang.ThreadGroup"));
-
-        // cm.put(null, "1");
-
-        for (int i = 0; i < 14; i++) {
+        //
+        // System.out.println(cm.get("java.lang.ThreadGroup"));
+        //
+        // // cm.put(null, "1");
+        //
+        int i = 0;
+        for (; i < Integer.MAX_VALUE; i++) {
             System.out.println(cm.get("java.lang.ThreadGroup"));
             System.out.println(i);
             cm.put("key_" + i, "huaizuo_" + i);
         }
+        cm.put("key_" + i, "huaizuo_" + i);
+
     }
 
     /**

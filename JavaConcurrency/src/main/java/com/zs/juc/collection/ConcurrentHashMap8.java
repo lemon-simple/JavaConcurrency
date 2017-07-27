@@ -963,29 +963,30 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
             Node<K, V> f;
             int n, i, fh;
             if (tab == null || (n = tab.length) == 0)// n是tab
-                tab = initTable();
-            else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
-                if (casTabAt(tab, i, null, new Node<K, V>(hash, key, value, null)))
+                tab = initTable();//初始化
+            // i = (n -1) & hash 数组的index
+            else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {//根据key找到的数组元素为null
+                if (casTabAt(tab, i, null, new Node<K, V>(hash, key, value, null)))// 初始化这个数组元素的链表
                     break; // no lock when adding to empty bin
-            } else if ((fh = f.hash) == MOVED)
-                tab = helpTransfer(tab, f);
+            } else if ((fh = f.hash) == MOVED)//根据key找到的数组元素已经存在结点 这个数组元素为链表结构
+                tab = helpTransfer(tab, f);// tab代表当前哈希表数组;f代表当前数组元素
             else {
                 V oldVal = null;
                 synchronized (f) {
-                    if (tabAt(tab, i) == f) {
+                    if (tabAt(tab, i) == f) {//再次判断，如果失败则释放锁
                         if (fh >= 0) {
                             binCount = 1;
                             for (Node<K, V> e = f;; ++binCount) {
                                 K ek;
-                                if (e.hash == hash && ((ek = e.key) == key || (ek != null && key.equals(ek)))) {
-                                    oldVal = e.val;
-                                    if (!onlyIfAbsent)
-                                        e.val = value;
+                                if (e.hash == hash && ((ek = e.key) == key || (ek != null && key.equals(ek)))) {//判断key是否匹配遍历的当前节点
+                                    oldVal = e.val;//记录原有value
+                                    if (!onlyIfAbsent)//是否允许覆盖 默认允许
+                                        e.val = value;//覆盖
                                     break;
                                 }
                                 Node<K, V> pred = e;
-                                if ((e = e.next) == null) {
-                                    pred.next = new Node<K, V>(hash, key, value, null);
+                                if ((e = e.next) == null) {//移动到下个结点，并且判断不为null
+                                    pred.next = new Node<K, V>(hash, key, value, null);//为null表示到达链表尾部,此时在尾部插入新的结点。否则继续遍历这个链表
                                     break;
                                 }
                             }
@@ -2124,17 +2125,17 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
         while ((tab = table) == null || tab.length == 0) {
             if ((sc = sizeCtl) < 0)
                 Thread.yield(); // lost initialization race; just spin
-            else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
+            else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {// CAS设置为-1表示正在初始化
                 try {
                     if ((tab = table) == null || tab.length == 0) {
-                        int n = (sc > 0) ? sc : DEFAULT_CAPACITY;
+                        int n = (sc > 0) ? sc : DEFAULT_CAPACITY;// 默认数组个数16
                         @SuppressWarnings("unchecked")
-                        Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n];
+                        Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n];// Node数组
                         table = tab = nt;
-                        sc = n - (n >>> 2);
+                        sc = n - (n >>> 2);// n-n/2*2
                     }
                 } finally {
-                    sizeCtl = sc;
+                    sizeCtl = sc;// resize 阈值
                 }
                 break;
             }
@@ -2148,17 +2149,20 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
      * is available. Rechecks occupancy after a transfer to see if another
      * resize is already needed because resizings are lagging additions.
      *
+     *增加计数,如果table太小并且没有resizing，执行transfer方法
+     *如果已经执行过resizing了,?
+     *
      * @param x the count to add
      * @param check if <0, don't check resize, if <= 1 only check if uncontended
      */
-    private final void addCount(long x, int check) {
+    private final void addCount(long x, int check) {//put方法调用:x默认为1;binCount表示链表遍历的当前个数
         CounterCell[] as;
         long b, s;
-        if ((as = counterCells) != null || !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {
+        if ((as = counterCells) != null || !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {//当前k\v元素总数，加1
             CounterCell a;
             long v;
             int m;
-            boolean uncontended = true;
+            boolean uncontended = true;//默认假设不存在竞争
             if (as == null || (m = as.length - 1) < 0 || (a = as[ThreadLocalRandom.getProbe() & m]) == null
                     || !(uncontended = U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))) {
                 fullAddCount(x, uncontended);
@@ -2171,6 +2175,7 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
         if (check >= 0) {
             Node<K, V>[] tab, nt;
             int n, sc;
+            //当前总数（+1后)>=阈值(sc) && table数组不为null && 数组个数不超标
             while (s >= (long) (sc = sizeCtl) && (tab = table) != null && (n = tab.length) < MAXIMUM_CAPACITY) {
                 int rs = resizeStamp(n);
                 if (sc < 0) {
@@ -2192,6 +2197,8 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
     final Node<K, V>[] helpTransfer(Node<K, V>[] tab, Node<K, V> f) {
         Node<K, V>[] nextTab;
         int sc;
+        // hash数组桶不为null && f属于ForwardingNode(也就是链表结构) && f的下个nextTable !=null???
+        
         if (tab != null && (f instanceof ForwardingNode) && (nextTab = ((ForwardingNode<K, V>) f).nextTable) != null) {
             int rs = resizeStamp(tab.length);
             while (nextTab == nextTable && table == tab && (sc = sizeCtl) < 0) {
@@ -2260,17 +2267,17 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
         if (nextTab == null) { // initiating
             try {
                 @SuppressWarnings("unchecked")
-                Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n << 1];
+                Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n << 1];//初始化原有数组双倍长度的新数组
                 nextTab = nt;
             } catch (Throwable ex) { // try to cope with OOME
                 sizeCtl = Integer.MAX_VALUE;
                 return;
-            }
+            }9
             nextTable = nextTab;
-            transferIndex = n;
+            transferIndex = n;//原有数组长度
         }
         int nextn = nextTab.length;
-        ForwardingNode<K, V> fwd = new ForwardingNode<K, V>(nextTab);
+        ForwardingNode<K, V> fwd = new ForwardingNode<K, V>(nextTab);//初始化ForwardingNode
         boolean advance = true;
         boolean finishing = false; // to ensure sweep before committing nextTab
         for (int i = 0, bound = 0;;) {
