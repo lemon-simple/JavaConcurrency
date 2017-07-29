@@ -1962,12 +1962,18 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 * @return its new wait node
 		 */
 		private Node addConditionWaiter() {
-			Node t = lastWaiter;
+			Node t = lastWaiter;//condtiton队列总的尾部结点
 			// If lastWaiter is cancelled, clean out.
+<<<<<<< HEAD
 			// 也就是说结点为null或者waitStatus状态不为condition,就认为该结点无效
 			if (t != null && t.waitStatus != Node.CONDITION) {// ???
 				unlinkCancelledWaiters();// ???
 				t = lastWaiter;// lastWaiter可能发生改变，再次更新
+=======
+			if (t != null && t.waitStatus != Node.CONDITION) {//Node.CONDITION表示线程在condition等待
+				unlinkCancelledWaiters();
+				t = lastWaiter;
+>>>>>>> 305794656505fb7aeacbf52d8e7c137542f6cc70
 			}
 			Node node = new Node(Thread.currentThread(), Node.CONDITION);
 			if (t == null)// 首次进入t==null
@@ -2020,14 +2026,22 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 * cancellations occur in the absence of signals. It traverses all nodes
 		 * rather than stopping at a particular target to unlink all pointers to
 		 * garbage nodes without requiring many re-traversals during
+<<<<<<< HEAD
 		 * cancellation storms 从condition队列中通过取消结点链接将取消的结点移除队列。 此方法只能在锁获取后调用。
 		 * 这个方法一般在Condition wait结点取消时被调用,并且当lastWaiter被认为已经取消则插入一个新的等待结点。
 		 * 这个方法需要去避免垃圾保留，当始终没有signal出现的时候。
 		 * 所以即使这个方法可能需要一个全部遍历的动作，这个方法仅仅在超时或者没有signal导致的取消时才发挥作用。 这个方法遍历所有节点。
+=======
+		 * cancellation storms.
+		 * 将取消的waiter结点从condition队列中移除。
+		 * 该方法调用的前提是当前线程获取到了锁。
+		 * 当Condition结点在等待并且插入了一个新的等待结点，最后一个结点已经取消时这个方法被调用。
+>>>>>>> 305794656505fb7aeacbf52d8e7c137542f6cc70
 		 */
 		private void unlinkCancelledWaiters() {
 			Node t = firstWaiter;
 			Node trail = null;
+<<<<<<< HEAD
 			// t是Condition队列的头结点，开始从头结点遍历所有节点，剔除取消的节点
 			while (t != null) {
 				Node next = t.nextWaiter;// next one
@@ -2035,6 +2049,14 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 					t.nextWaiter = null;// 取消这个结点与后继结点的连接关系
 					if (trail == null)// 第一次肯定是true,仅用来判断头结点
 						firstWaiter = next;// 如果第一次，也就是说头结点取消了，那么将头结点替换掉。
+=======
+			while (t != null) {//首结点不为空
+				Node next = t.nextWaiter;//首结点的后继结点
+				if (t.waitStatus != Node.CONDITION) {//首结点状态不为condition时
+					t.nextWaiter = null;//从队列中切断连接
+					if (trail == null)
+						firstWaiter = next;//后继结点变为首节点。
+>>>>>>> 305794656505fb7aeacbf52d8e7c137542f6cc70
 					else
 						trail.nextWaiter = next;
 					if (next == null)
@@ -2134,7 +2156,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		}
 
 		/**
-		 * Implements interruptible condition wait.
+		 * 实现了可中断的条件等待
 		 * <ol>
 		 * <li>If current thread is interrupted, throw InterruptedException.
 		 * <li>Save lock state returned by {@link #getState}.
@@ -2148,7 +2170,7 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 		 * </ol>
 		 */
 		public final void await() throws InterruptedException {
-			if (Thread.interrupted())
+			if (Thread.interrupted())//中断响应
 				throw new InterruptedException();
 			Node node = addConditionWaiter();// 向condition队尾增加一个condition结点
 			int savedState = fullyRelease(node);// 释放锁并且唤醒等待这个锁的后继结点，并返回这个结点进入await方法时锁的状态(正常情况下应该是>=1的)

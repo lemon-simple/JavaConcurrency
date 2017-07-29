@@ -86,9 +86,9 @@ public class TwinsLocks_exclusive implements Lock {
     public static void test() throws InterruptedException {
         final Lock lock = new TwinsLocks_exclusive();
 
-        for (int i = 0; i < 100; i++)
+        for (int i = 0; i < 100; i++) {
             new Thread(getRunnable(lock)).start();
-
+        }
     }
 
     /**
@@ -99,17 +99,18 @@ public class TwinsLocks_exclusive implements Lock {
         return new Runnable() {
             @Override
             public void run() {
-                for (;;) {
-                    lock.lock();
-                    System.out.println("[" + Thread.currentThread().getName() + "]----------something----------"
-                            + System.currentTimeMillis());
-                    try {
-                        TimeUnit.SECONDS.sleep(6);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    lock.unlock();
+                // for (;;) {
+                try {
+                    TimeUnit.SECONDS.sleep(1);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
+                lock.lock();
+                System.out.println("[" + Thread.currentThread().getName() + "]----------something----------"
+                        + System.currentTimeMillis());
+
+                lock.unlock();
+                // }
             }
         };
     }
