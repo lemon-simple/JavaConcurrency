@@ -25,7 +25,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * An {@link ExecutorService} that executes each submitted task using
  * one of possibly several pooled threads, normally configured
  * using {@link Executors} factory methods.
- *
+ * 
+ * 一个ExecutorService使用池化的一个线程，来执行提交过来的任务。通常使用Executors中的工厂方法设置产生一个线程池。
+ * 
  * <p>Thread pools address two different problems: they usually
  * provide improved performance when executing large numbers of
  * asynchronous tasks, due to reduced per-task invocation overhead,
@@ -33,7 +35,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * including threads, consumed when executing a collection of tasks.
  * Each {@code ThreadPoolExecutor} also maintains some basic
  * statistics, such as the number of completed tasks.
- *
+ * 线程池解决两个不同的问题：当需要执行大量异步任务时,线程池通常用来提升性能;
+ * 另外每个ThreadPoolExecutor同时也维护了一些静态变量(比如,任务完成的数量).
  * <p>To be useful across a wide range of contexts, this class
  * provides many adjustable parameters and extensibility
  * hooks. However, programmers are urged to use the more convenient
@@ -45,21 +48,18 @@ import java.util.concurrent.locks.ReentrantLock;
  * preconfigure settings for the most common usage
  * scenarios. Otherwise, use the following guide when manually
  * configuring and tuning this class:
- *
+ * 为了适用更为广泛的场景,这个类提供了许多可调控的参数和可扩展的hook.
+ * 然而，程序员更喜欢适用更为方便的Executors方法,
+ * 来创建比如newCachedThreadPool、newFixedThreadPool等等多种场景下使用的线程池。
+ * 然而当需要手动设置并且调节线程池时，可以使用如下的引导:
  * <dl>
  *
- * <dt>Core and maximum pool sizes</dt>
- *
- * <dd>A {@code ThreadPoolExecutor} will automatically adjust the
- * pool size (see {@link #getPoolSize})
- * according to the bounds set by
- * corePoolSize (see {@link #getCorePoolSize}) and
- * maximumPoolSize (see {@link #getMaximumPoolSize}).
- *
- * When a new task is submitted in method {@link #execute(Runnable)},
- * and fewer than corePoolSize threads are running, a new thread is
- * created to handle the request, even if other worker threads are
- * idle.  If there are more than corePoolSize but less than
+ * <dt>关于coresize核心线程与maxSize最大线程数</dt>
+ * 当一个新的任务被提交(调用execute(Runnable)),当池中的线程数量小于corePoolSize,即使池中有线程
+ * 处于空闲等待状态,线程池也会重新创建一个线程来执行这个任务。也就是说当线程池中的线程数量没有超过corePoolSize
+ * 时，线程池中的空闲线程不会复用，会一直创建新的线程来执行任务，直到达到corePoolSize。
+ * 
+ * If there are more than corePoolSize but less than
  * maximumPoolSize threads running, a new thread will be created only
  * if the queue is full.  By setting corePoolSize and maximumPoolSize
  * the same, you create a fixed-size thread pool. By setting
@@ -69,7 +69,13 @@ import java.util.concurrent.locks.ReentrantLock;
  * sizes are set only upon construction, but they may also be changed
  * dynamically using {@link #setCorePoolSize} and {@link
  * #setMaximumPoolSize}. </dd>
- *
+ * 
+ * 如果 corePoolSize<threadSize<maximumPoolSize,新的线程仅会在队列满的时候被创建。
+ * 通过设置corePoolSize、maximumPoolSize相同，就得到了一个固定大小的线程池。
+ * 
+ * 通过设置maximumPoolSize为Integer.MAX_VALUE，基本上也就是设置了无限大的线程池，
+ * 这个线程池几乎应用于无限大的并发任务。
+ * 
  * <dt>On-demand construction</dt>
  *
  * <dd>By default, even core threads are initially created and
@@ -77,14 +83,22 @@ import java.util.concurrent.locks.ReentrantLock;
  * dynamically using method {@link #prestartCoreThread} or {@link
  * #prestartAllCoreThreads}.  You probably want to prestart threads if
  * you construct the pool with a non-empty queue. </dd>
- *
+ * 默认情况下,刚开始核心线程被创建并且当新的任务进入后启动???,但是这个情况可以被动态的
+ * 通过prestartCoreThread与prestartAllCoreThreads 方法 改写。
+ * 如果你构造了一个包含非空队列的线程池，你通常想要预先启动线程,而不是等新任务进入时才启动。
+ * 
  * <dt>Creating new threads</dt>
  *
  * <dd>New threads are created using a {@link ThreadFactory}.  If not
  * otherwise specified, a {@link Executors#defaultThreadFactory} is
  * used, that creates threads to all be in the same {@link
  * ThreadGroup} and with the same {@code NORM_PRIORITY} priority and
- * non-daemon status. By supplying a different ThreadFactory, you can
+ * non-daemon status. 
+ * 新线程通过使用ThreadFactory创建。如果没有指定一个ThreadFactory，那么每个线程池会使用
+ * 一个默认的线程工厂类来创建线程.这些被创建了的线程都在一个线程组，并且都是同样的NORM_PRIORITYyouxianji,
+ * 并且都是非守护状态。
+ * 
+ * By supplying a different ThreadFactory, you can
  * alter the thread's name, thread group, priority, daemon status,
  * etc. If a {@code ThreadFactory} fails to create a thread when asked
  * by returning null from {@code newThread}, the executor will
@@ -94,9 +108,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * permission, service may be degraded: configuration changes may not
  * take effect in a timely manner, and a shutdown pool may remain in a
  * state in which termination is possible but not completed.</dd>
- *
+ * 通过使用自定义的ThreadFactory，你可以指定线程的名称、线程组、优先级、是否是daemon状态。
+ * 
  * <dt>Keep-alive times</dt>
- *
+ * 非核心线程空闲的最大时间
  * <dd>If the pool currently has more than corePoolSize threads,
  * excess threads will be terminated if they have been idle for more
  * than the keepAliveTime (see {@link #getKeepAliveTime(TimeUnit)}).
@@ -116,24 +131,26 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <dd>Any {@link BlockingQueue} may be used to transfer and hold
  * submitted tasks.  The use of this queue interacts with pool sizing:
- *
+ * 线程池中的阻塞队列用来移动、存放提交过来的任务。
  * <ul>
  *
  * <li> If fewer than corePoolSize threads are running, the Executor
  * always prefers adding a new thread
  * rather than queuing.</li>
- *
+ * 如果当前线程总数小于corePoolSize,那么执行器通常会产新的线程去执行任务,而不是将任务入队。
  * <li> If corePoolSize or more threads are running, the Executor
  * always prefers queuing a request rather than adding a new
  * thread.</li>
+ * 如果线程总数大于corePoolSize,那么执行器会优先将任务入队存放，直到当队列慢了，才会去创建新的线程，直到达到最大线程数量
  *
  * <li> If a request cannot be queued, a new thread is created unless
  * this would exceed maximumPoolSize, in which case, the task will be
  * rejected.</li>
- *
+ * 
  * </ul>
  *
  * There are three general strategies for queuing:
+ * 以下是几种常见的入队策略：
  * <ol>
  *
  * <li> <em> Direct handoffs.</em> A good default choice for a work
@@ -146,20 +163,23 @@ import java.util.concurrent.locks.ReentrantLock;
  * avoid rejection of new submitted tasks. This in turn admits the
  * possibility of unbounded thread growth when commands continue to
  * arrive on average faster than they can be processed.  </li>
- *
+ * 直接传递给线程执行(SynchronousQueue),它不会存储任务，而是直接交给线程执行。如果没有可用线程
+ * 那么会创建一个新线程去执行，执行完了销毁。这种线程池不会设置最大线程数以免任务丢弃。
+ * 
  * <li><em> Unbounded queues.</em> Using an unbounded queue (for
  * example a {@link LinkedBlockingQueue} without a predefined
  * capacity) will cause new tasks to wait in the queue when all
  * corePoolSize threads are busy. Thus, no more than corePoolSize
- * threads will ever be created. (And the value of the maximumPoolSize
- * therefore doesn't have any effect.)  This may be appropriate when
- * each task is completely independent of others, so tasks cannot
- * affect each others execution; for example, in a web page server.
+ * threads will ever be created. (And the alue of the maximumPoolSize
+ * therefore doesn't have any effect.)  
+ * 使用一个无界的队列来存放任务（比如，使用不限定最大容量的LinkedBlockingQueue），当新的任务被提交，
+ * 线程数已经达到了coreSize，这是不会再产生任何新的线程，任务都会入队,直到coreThreads有可用的。
+ * 这种时候任务之间相互独立的场景，如web页面请求任务。
  * While this style of queuing can be useful in smoothing out
  * transient bursts of requests, it admits the possibility of
  * unbounded work queue growth when commands continue to arrive on
  * average faster than they can be processed.  </li>
- *
+ * 
  * <li><em>Bounded queues.</em> A bounded queue (for example, an
  * {@link ArrayBlockingQueue}) helps prevent resource exhaustion when
  * used with finite maximumPoolSizes, but can be more difficult to
@@ -172,6 +192,15 @@ import java.util.concurrent.locks.ReentrantLock;
  * generally requires larger pool sizes, which keeps CPUs busier but
  * may encounter unacceptable scheduling overhead, which also
  * decreases throughput.  </li>
+ * 。
+ * 一个有界队列(ArrayBlockingQueue)通过合理设置maxnumPoolSize以防止资源被过度消耗，这种对任务的管理方式
+ * 更难于调控。队列的size与线程池maxSize之间需要相互协调妥协：大队列和小线程池可以减少CPU\OS资源\上线问切换的消耗。
+ * 但是会导致较低的吞吐量。 如果任务频繁的阻塞(比如密集的IO，IO成为瓶颈)，CPU也许导致大量空闲资源。
+ * 
+ * 小队列大线程池,CPU可以充分利用，但是频繁的线程调度上下文切换同样会导致吞吐量下降。
+ * 
+ * 
+ * 
  *
  * </ol>
  *
@@ -193,20 +222,23 @@ import java.util.concurrent.locks.ReentrantLock;
  * <li> In the default {@link ThreadPoolExecutor.AbortPolicy}, the
  * handler throws a runtime {@link RejectedExecutionException} upon
  * rejection. </li>
+ * 当线程池没有空余线程、并且队列已经满了。这时候会默认采取拒绝策略，丢弃任务并抛出RejectedExecutionException
  *
  * <li> In {@link ThreadPoolExecutor.CallerRunsPolicy}, the thread
  * that invokes {@code execute} itself runs the task. This provides a
  * simple feedback control mechanism that will slow down the rate that
  * new tasks are submitted. </li>
- *
+ * CallerRunsPolicy会使用当前提交任务的线程去执行任务，这种策略会导致任务提交的速度下降。
+ * 
  * <li> In {@link ThreadPoolExecutor.DiscardPolicy}, a task that
  * cannot be executed is simply dropped.  </li>
- *
+ * DiscardPolicy简单来说就是直接丢弃任务。
+ * 
  * <li>In {@link ThreadPoolExecutor.DiscardOldestPolicy}, if the
  * executor is not shut down, the task at the head of the work queue
  * is dropped, and then execution is retried (which can fail again,
  * causing this to be repeated.) </li>
- *
+ * DiscardOldestPolicy会丢弃队列头任务，也就是等待时间最久的那个任务，然后腾出一个空位放入最新提交进来的任务
  * </ol>
  *
  * It is possible to define and use other kinds of {@link
@@ -215,6 +247,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * capacity or queuing policies. </dd>
  *
  * <dt>Hook methods</dt>
+ * hook方法,可以实现在任务执行的先后插入一段逻辑。或者在线程池完全结束前执行一段逻辑
  *
  * <dd>This class provides {@code protected} overridable
  * {@link #beforeExecute(Thread, Runnable)} and
