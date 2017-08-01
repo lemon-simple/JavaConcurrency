@@ -9,7 +9,7 @@ public class ArrayBlockingQueueTest {
     public static void main(String[] args) throws InterruptedException {
         ExecutorService ex = Executors.newFixedThreadPool(50);
 
-        ArrayBlockingQueue<CustomizedTask> tasksQueue = new ArrayBlockingQueue<CustomizedTask>(10);
+        ArrayBlockingQueue<CustomizedTask> tasksQueue = new ArrayBlockingQueue<CustomizedTask>(0);
         // 生产者线程
         new Thread(new Runnable() {
             @Override

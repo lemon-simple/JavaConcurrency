@@ -18,124 +18,145 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  */
 public class Test {
-	static ReentrantLock lock = new ReentrantLock();
+    static ReentrantLock lock = new ReentrantLock();
 
-	static final int SHARED_SHIFT = 16;
-	static final int SHARED_UNIT = (1 << SHARED_SHIFT);
-	static final int MAX_COUNT = (1 << SHARED_SHIFT) - 1;
-	static final int EXCLUSIVE_MASK = (1 << SHARED_SHIFT) - 1;
+    static final int SHARED_SHIFT = 16;
 
-	/** Returns the number of shared holds represented in count */
-	static int sharedCount(int c) {
-		return c >>> SHARED_SHIFT;
-	}
+    static final int SHARED_UNIT = (1 << SHARED_SHIFT);
 
-	/** Returns the number of exclusive holds represented in count */
-	static int exclusiveCount(int c) {
-		return c & EXCLUSIVE_MASK;
-	}
+    static final int MAX_COUNT = (1 << SHARED_SHIFT) - 1;
 
-	public static void main(String[] args) throws InterruptedException {
-		// test();
-		// testExtractCounter();
+    static final int EXCLUSIVE_MASK = (1 << SHARED_SHIFT) - 1;
 
-		// testThreadLocalReference();
+    /** Returns the number of shared holds represented in count */
+    static int sharedCount(int c) {
+        return c >>> SHARED_SHIFT;
+    }
 
-		// 构造FIFO队列：|readLock-lock|writeLock-lock|readLock-lock|readLock-lock|
-		ReadWriteLock wrLock = new ReentrantReadWriteLock();
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				System.out.println("first");
-				wrLock.readLock().lock();
-			}
-		}, "01 to readLock lock").start();
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				System.out.println("first");
-				wrLock.readLock().lock();
-			}
-		}, "02 to readLock lock").start();
-		TimeUnit.SECONDS.sleep(1);
+    /** Returns the number of exclusive holds represented in count */
+    static int exclusiveCount(int c) {
+        return c & EXCLUSIVE_MASK;
+    }
 
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				wrLock.writeLock().lock();
-			}
-		}, "03 to writeLock lock").start();
-		TimeUnit.SECONDS.sleep(1);
+    private static final int COUNT_BITS = Integer.SIZE - 3;
 
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				wrLock.readLock().lock();
-			}
-		}, "04 to readLock lock").start();
-		TimeUnit.SECONDS.sleep(1);
+    public static void main(String[] args) throws InterruptedException {
 
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				wrLock.readLock().lock();
-			}
-		}, "05 to readLock lock").start();
-		TimeUnit.SECONDS.sleep(1);
+        retry:
 
-	}
+        for (int i = 0; i < 10; i++) {
 
-	private static void testThreadLocalReference() {
-		HoldCounter b = null;
-		ThreadLocalHoldCounter threadHolder = new ThreadLocalHoldCounter();
-		HoldCounter c = threadHolder.get();
-		b = c;
-		threadHolder.remove();
-		System.out.println("HoldCounter c.count " + c.count);
-		c.count++;
-		System.out.println("HoldCounter c.count " + c.count);
+            for (int j = 11; j < 15; j++) {
 
-		System.out.println("HoldCounter b.count " + b.count);
+                if (j == 11) {
+                    break retry;
+                }
+                System.out.println("j" + j);
 
-	}
+            }
+            System.out.println("i" + i);
+        }
 
-	static final class ThreadLocalHoldCounter extends ThreadLocal<HoldCounter> {
-		public HoldCounter initialValue() {
-			return new HoldCounter();
-		}
-	}
+        // test();
+        // testExtractCounter();
 
-	static final class HoldCounter {
-		int count = 0;
-	}
+        // testThreadLocalReference();
 
-	public static Runnable getRunnable() {
-		return new Runnable() {
+        // 构造FIFO队列：|readLock-lock|writeLock-lock|readLock-lock|readLock-lock|
+        ReadWriteLock wrLock = new ReentrantReadWriteLock();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                System.out.println("first");
+                wrLock.readLock().lock();
+            }
+        }, "01 to readLock lock").start();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                System.out.println("first");
+                wrLock.readLock().lock();
+            }
+        }, "02 to readLock lock").start();
+        TimeUnit.SECONDS.sleep(1);
 
-			@Override
-			public void run() {
-				lock.lock();
-				try {
-					System.out.println("locked by " + Thread.currentThread().getName());
-				} finally {
-					lock.unlock();
-				}
-			}
-		};
-	}
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                wrLock.writeLock().lock();
+            }
+        }, "03 to writeLock lock").start();
+        TimeUnit.SECONDS.sleep(1);
 
-	private static void test() {
-		ExecutorService es = Executors.newFixedThreadPool(5);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                wrLock.readLock().lock();
+            }
+        }, "04 to readLock lock").start();
+        TimeUnit.SECONDS.sleep(1);
 
-		lock.lock();
-		for (int i = 0; i < 5; i++) {
-			es.execute(getRunnable());
-		}
-	}
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                wrLock.readLock().lock();
+            }
+        }, "05 to readLock lock").start();
+        TimeUnit.SECONDS.sleep(1);
 
-	private static void testExtractCounter() {
-		System.out.println(sharedCount(SHARED_UNIT));
-		System.out.println(exclusiveCount(SHARED_UNIT));
-		System.out.println(SHARED_UNIT);
-	}
+    }
+
+    private static void testThreadLocalReference() {
+        HoldCounter b = null;
+        ThreadLocalHoldCounter threadHolder = new ThreadLocalHoldCounter();
+        HoldCounter c = threadHolder.get();
+        b = c;
+        threadHolder.remove();
+        System.out.println("HoldCounter c.count " + c.count);
+        c.count++;
+        System.out.println("HoldCounter c.count " + c.count);
+
+        System.out.println("HoldCounter b.count " + b.count);
+
+    }
+
+    static final class ThreadLocalHoldCounter extends ThreadLocal<HoldCounter> {
+        public HoldCounter initialValue() {
+            return new HoldCounter();
+        }
+    }
+
+    static final class HoldCounter {
+        int count = 0;
+    }
+
+    public static Runnable getRunnable() {
+        return new Runnable() {
+
+            @Override
+            public void run() {
+                lock.lock();
+                try {
+                    System.out.println("locked by " + Thread.currentThread().getName());
+                } finally {
+                    lock.unlock();
+                }
+            }
+        };
+    }
+
+    private static void test() {
+        ExecutorService es = Executors.newFixedThreadPool(5);
+
+        lock.lock();
+        for (int i = 0; i < 5; i++) {
+            es.execute(getRunnable());
+        }
+    }
+
+    private static void testExtractCounter() {
+        System.out.println(sharedCount(SHARED_UNIT));
+        System.out.println(exclusiveCount(SHARED_UNIT));
+        System.out.println(SHARED_UNIT);
+    }
 }
