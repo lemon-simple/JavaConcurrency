@@ -47,7 +47,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * pool) and {@link Executors#newSingleThreadExecutor} (single background
  * thread), that preconfigure settings for the most common usage scenarios.
  * Otherwise, use the following guide when manually configuring and tuning this
- * class: 为了适用更为广泛的场景,这个类提供了许多可调控的参数和可扩展的hook. 然而，程序员更喜欢适用更为方便的Executors方法,
+ * class: 
+ * 为了适用更为广泛的场景,这个类提供了许多可调控的参数和可扩展的hook. 然而，程序员更喜欢适用更为方便的Executors方法,
  * 来创建比如newCachedThreadPool、newFixedThreadPool等等多种场景下使用的线程池。
  * 然而当需要手动设置并且调节线程池时，可以使用如下的引导:
  * <dl>
@@ -1050,7 +1051,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                 continue;
             }
 
-            try {
+            try {//从队列头部获取元素
                 Runnable r = timed ? workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) : workQueue.take();
                 if (r != null)
                     return r;
@@ -1064,14 +1065,15 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     /**
      * Main worker run loop. Repeatedly gets tasks from queue and executes them,
      * while coping with a number of issues:
-     *
+     * 连续不停的从队列中回去任务并且执行。
+     * 
      * 1. We may start out with an initial task, in which case we don't need to
      * get the first one. Otherwise, as long as pool is running, we get tasks
      * from getTask. If it returns null then the worker exits due to changed
      * pool state or configuration parameters. Other exits result from exception
      * throws in external code, in which case completedAbruptly holds, which
      * usually leads processWorkerExit to replace this thread.
-     *
+     * 
      * 2. Before running any task, the lock is acquired to prevent other pool
      * interrupts while the task is executing, and then we ensure that unless
      * pool is stopping, this thread does not have its interrupt set.
@@ -1107,7 +1109,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         w.unlock(); 
         boolean completedAbruptly = true;
         try {
-            while (task != null || (task = getTask()) != null) {
+            while (task != null || (task = getTask()) != null) {//从队列中循环获取任务
                 w.lock();
                 // If pool is stopping, ensure thread is interrupted;
                 // if not, ensure thread is not interrupted. This
