@@ -1055,7 +1055,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                 Runnable r = timed ? workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) : workQueue.take();
                 if (r != null)
                     return r;
-                timedOut = true;
+           nm     timedOut = true;
             } catch (InterruptedException retry) {
                 timedOut = false;
             }

@@ -38,7 +38,8 @@ import java.util.concurrent.locks.ReadWriteLock;
  * 
  * 当写锁被占用，或者存在一个等待的写线程(排在队列最靠前)？？？？，
  * 那么其他再要尝试获取公平读锁的读线程将会被阻塞，直到排在它前边的写线程获取、释放掉了写锁。
- * 当然，当排在读线程之前的写线程取消了对写锁的获取，从队列中移除，并且这个时候写锁是空闲的， 这些读线程将会允许共享式获取读锁。
+ * 当然，当排在读线程之前的写线程取消了对写锁的获取，从队列中移除，
+ * 并且这个时候写锁是空闲的， 这些读线程将会允许共享式获取读锁。
  * 
  *
  * 公平模式中，一个写线程获取锁成功的前提是：当前写锁、读锁都是空闲的。
@@ -294,7 +295,8 @@ public class ReentrantReadWriteLock implements ReadWriteLock, java.io.Serializab
 		}
 
 		/**
-		 * 用来记录每个获取读锁的线程id以及线程重入情况。 当前线程持有的读锁的重入次数，每个线程获取的读锁状态保存在ThreadLocal中
+		 * 用来记录每个获取读锁的线程id以及线程重入情况。 当前线程持有的读锁的重入次数，
+		 * 每个线程获取的读锁状态保存在ThreadLocal中
 		 * 仅在构造器和readObject时完成初始化。当一个读锁的重入数量为0时清除
 		 */
 		private transient ThreadLocalHoldCounter readHolds;
@@ -362,7 +364,7 @@ public class ReentrantReadWriteLock implements ReadWriteLock, java.io.Serializab
 			 * reentrant acquire or queue policy allows it. If so, update state
 			 * and set owner.
 			 * 
-			 * 1.当读锁被其他线程占用则失败;写锁被其他线程占用则失败。
+			 * 1.当读锁被其他线程占用则失败;写锁被其他线程占用则失败。(写锁的排他性决定了获取成功的前提是:读写锁都空闲) 
 			 * 2.写锁被当前线程重入，在count不为0的前提下，如果计数出现饱和，失败
 			 * 3.否则，当前线程有资格CAS获取锁(考虑公平、非公平模式)。
 			 */
@@ -374,13 +376,13 @@ public class ReentrantReadWriteLock implements ReadWriteLock, java.io.Serializab
 				// (Note: if c != 0 and w == 0 then shared count != 0)
 				// 注意:state！=0 并且写锁提取数=0那么读锁提取数肯定不为0
 				if (w == 0 || current != getExclusiveOwnerThread())// 如果读锁被占用写锁空闲？||占用线程不是当前线程？
-					return false;// 写锁空闲读写占用 或者 占用锁线程不是当前线程 那么失败
+					return false;// 写锁空闲读锁占用 或者 占用锁线程不是当前线程 那么失败
 				if (w + exclusiveCount(acquires) > MAX_COUNT)// 饱和，失败
 					throw new Error("Maximum lock count exceeded");
 				// Reentrant acquire
 				setState(c + acquires);// c!=0&&w!=0&&当前线程占用&&重入次数未饱和。也就是当前线程持有但是计数器不饱和,可以继续重入
 				return true;
-			}
+			}	
 			if (writerShouldBlock() || !compareAndSetState(c, c + acquires))// 当前模式是否允许获取锁||CAS失败
 				return false;
 			setExclusiveOwnerThread(current);
@@ -424,20 +426,10 @@ public class ReentrantReadWriteLock implements ReadWriteLock, java.io.Serializab
 
 		protected final int tryAcquireShared(int unused) {
 			/*
-			 * Walkthrough: 1. If write lock held by another thread, fail. 2.
-			 * Otherwise, this thread is eligible for lock wrt state, so ask if
-			 * it should block because of queue policy. If not, try to grant by
-			 * CASing state and updating count. Note that step does not check
-			 * for reentrant acquires, which is postponed to full version to
-			 * avoid having to check hold count in the more typical
-			 * non-reentrant case. 3. If step 2 fails either because thread
-			 * apparently not eligible or CAS fails or count saturated, chain to
-			 * version with full retry loop.
-			 * 
-			 * 此方法实现用于读锁。 1.写锁被其他线程占有，失败
+			 * 此方法实现用于读锁。
+			 * 1.写锁被其他线程占有，失败
 			 * 2.当前是否满足排队策略？如果满足排队策略，并且不需要等待，那么CAS.注意此步骤没有检查重入性获取。
 			 * 3.如果2因为CAS失败或者饱和异常或者没有资格，那么绑定版本号循环再试
-			 * 
 			 */
 			Thread current = Thread.currentThread();
 			int c = getState();
@@ -457,10 +449,9 @@ public class ReentrantReadWriteLock implements ReadWriteLock, java.io.Serializab
 					HoldCounter rh = cachedHoldCounter;
 					if (rh == null || rh.tid != getThreadId(current))// cachedHoldCounter不为空||
 																		// 当前线程不是缓存的线程
-						cachedHoldCounter = rh = readHolds.get();// 初始化 ，cache
-																	// for
-																	// release
-					else if (rh.count == 0)// 不为空且是当前线程，并且cahce的锁记录为0，说明当前仅有首线程获取到了锁(可能其他线程已经释放了读锁)
+						cachedHoldCounter = rh = readHolds.get();
+					// 不为空且是当前线程，并且cahce的锁记录为0，说明当前仅有首线程获取到了锁(可能其他线程已经释放了读锁)
+					else if (rh.count == 0)
 						readHolds.set(rh);
 					rh.count++;// 锁重入情况
 				}

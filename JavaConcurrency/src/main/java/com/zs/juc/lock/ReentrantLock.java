@@ -80,10 +80,10 @@ public class ReentrantLock implements Lock, java.io.Serializable {
 		abstract void lock();
 
 		/**
-		 * Performs non-fair tryLock. tryAcquire is implemented in subclasses,
-		 * but both need nonfair try for trylock method.
+		 * 判断当前同步状态是否空闲：
+		 * 	空闲：尝试CAS获取锁,成功则返回true否則返回false，进入同步队列等待逻辑。
+		 * 	占用：考虑是否是同一个线程重入情况，否則返回false。
 		 */
-		// 非公平式获取锁，非公平锁barge失败后会执行。lock(非公平模式)、tryLock的实现逻辑
 		final boolean nonfairTryAcquire(int acquires) {
 			final Thread current = Thread.currentThread();
 			int c = getState();
@@ -148,10 +148,16 @@ public class ReentrantLock implements Lock, java.io.Serializable {
 		}
 	}
 	// ------------------------------------------------------Sync------------------------------------------------------
-	//公平模式：实现的tryAcquire，先判断当前线程是否是等待最久的线程，如果是那么就CAS获取锁，或者重入。否则就进入AQS-FIFO队列
-	// 公平锁与非公平锁主要区别在于：tryAcquire的实现上。前者主要是通过CAS强行获取锁，获取失败进入FIFO队列等待；后者获取锁先判断是否“公平”后进行CAS操作，失败后也是进入FIFO队列
 	/**
-	 * Sync object for non-fair locks
+	 * 非公平锁（ReentrantLock默认模式）： 
+	 * 1.直接使用CAS去尝试获取锁(也就是同步状态state),
+	 * 	成功后当前线程置为拥有排他锁的线程。返回
+	 * 
+	 * 2.如果失敗调用AQS-acquire()，与公平锁的区别主要体现在tryAcquire上。
+	 * 	判断当前同步状态是否空闲： 
+	 * 		空闲：尝试CAS获取锁,成功则返回true否則返回false，进入同步队列等待逻辑。 
+	 * 		占用：考虑是否是同一个线程重入情况，否則返回false。
+	 * 
 	 */
 	static final class NonfairSync extends Sync {
 		private static final long serialVersionUID = 7316153563782823691L;
@@ -174,7 +180,15 @@ public class ReentrantLock implements Lock, java.io.Serializable {
 	}
 
 	/**
-	 * Sync object for fair locks
+	 * 公平模式：实现的AQS模板方法tryAcquire。
+	 * 如果当前锁空闲：
+	 * 	先判断当前线程是否是等待最久的线程
+	 * 	(也就是判断当前线程结点是否是头结点的后继结点，从而保证FIFO公平性)：
+	 * 	如果是那么就CAS获取锁，失败后返回false，进入AQS-FIFO队列等待
+	 * 如果当前锁被占用：考虑是否是同一个线程重入的情况，否则返回false，进入AQS-FIFO队列等待
+	 * 公平锁与非公平锁主要区别在于tryAcquire的实现上:
+	 *		前者首先会通过CAS强行获取锁(两次CAS尝试)，获取失败进入FIFO队列等待；
+	 * 	后者获取锁先判断是否“公平”，如果满足“公平”则进行CAS操作。不公平则直接进入FIFO队列等待
 	 */
 	static final class FairSync extends Sync {
 		private static final long serialVersionUID = -3000897897090466540L;
@@ -191,7 +205,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
 			final Thread current = Thread.currentThread();
 			int c = getState();
 			if (c == 0) {// 当前锁空闲
-				if (!hasQueuedPredecessors() && compareAndSetState(0, acquires)) {// ！当前线程之前是否还有等待时间更长的结点(也就是說头结点的后继者是否是当前线程)&&CAS获取锁
+			// ！当前线程之前是否还有等待时间更长的结点(也就是說头结点的后继者是否是当前线程)&&CAS获取锁
+				if (!hasQueuedPredecessors() && compareAndSetState(0, acquires)) {
 					setExclusiveOwnerThread(current);
 					return true;// 满足了公平锁的特点。进入：表示当前线程就是等待最长的线程
 				}
