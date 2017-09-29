@@ -255,7 +255,10 @@ public class HashMap8<K, V> extends AbstractMap<K, V> implements Map<K, V>, Clon
     /**
      * Basic hash bin node, used for most entries. (See below for TreeNode
      * subclass, and in LinkedHashMap for its Entry subclass.)
+     * 
+     * Node构成了单向链表数据结构
      */
+    
     static class Node<K, V> implements Map.Entry<K, V> {
         final int hash;
 
@@ -557,9 +560,9 @@ public class HashMap8<K, V> extends AbstractMap<K, V> implements Map<K, V>, Clon
         Node<K, V> first, e;
         int n;
         K k;
-        // 1.hash是 key.hashCode() ^ (h >>> 16)的返回值
-        // 2.(n - 1) & hash 等价于 hash % length，返回值为最终的数组桶索引
-        // 3.通过索引获取 数组元素：单向链表
+        // 1.hash是 key.hashCode() ^ (h >>> 16)的返回值(1.获取key的HashCode 2.移位使得高位参与运算:hashCode()的高16位异或低16位)
+        // 2.(n - 1) & hash 等价于 hash % length，返回值为最终的数组桶索引(3.hash&(length-1)==hash%length  hash值对数组长度取模运算)
+        // 3.通过索引获取 数组元素(bucket[x]),优先尝试获取链表中的第一个结点
         // 4.遍历单向链表 或者 从红黑树获取
         
         if ((tab = table) != null && (n = tab.length) > 0 && (first = tab[(n - 1) & hash]) != null) {

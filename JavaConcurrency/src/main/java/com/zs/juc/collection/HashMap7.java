@@ -342,6 +342,8 @@ public class HashMap7<K, V> extends AbstractMap<K, V> implements Map<K, V>, Clon
      * otherwise encounter collisions for hashCodes that do not differ in lower
      * bits. Note: Null keys always map to hash 0, thus index 0.
      */
+//    return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+
     final int hash(Object k) {
         int h = hashSeed;
         if (0 != h && k instanceof String) {
