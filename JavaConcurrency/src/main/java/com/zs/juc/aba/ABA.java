@@ -8,13 +8,12 @@ public class ABA {
 
 	private static AtomicInteger atomicInt = new AtomicInteger(100);
 
-
 	public static void main(String[] args) throws InterruptedException {
 		Thread intT1 = new Thread(new Runnable() {
 			@Override
 			public void run() {
-				System.out.println("T1-100——>101	"+atomicInt.compareAndSet(100, 101)+System.currentTimeMillis());
-				System.out.println("T1-101——>100	"+atomicInt.compareAndSet(101, 100)+System.currentTimeMillis());
+				System.out.println("T1-100——>101	" + atomicInt.compareAndSet(100, 101) + System.currentTimeMillis());
+				System.out.println("T1-101——>100	" + atomicInt.compareAndSet(101, 100) + System.currentTimeMillis());
 			}
 		});
 
@@ -27,7 +26,7 @@ public class ABA {
 					e.printStackTrace();
 				}
 				boolean c3 = atomicInt.compareAndSet(100, 101);
-				System.out.println("T2-100——>101	"+c3+System.currentTimeMillis()); // true
+				System.out.println("T2-100——>101	" + c3 + System.currentTimeMillis()); // true
 			}
 		});
 
@@ -35,38 +34,42 @@ public class ABA {
 		intT2.start();
 		intT1.join();
 		intT2.join();
-//
-//		Thread refT1 = new Thread(new Runnable() {
-//			@Override
-//			public void run() {
-//				try {
-//					TimeUnit.SECONDS.sleep(1);
-//				} catch (InterruptedException e) {
-//					e.printStackTrace();
-//				}
-//				atomicStampedRef.compareAndSet(100, 101, atomicStampedRef.getStamp(), atomicStampedRef.getStamp() + 1);
-//				atomicStampedRef.compareAndSet(101, 100, atomicStampedRef.getStamp(), atomicStampedRef.getStamp() + 1);
-//			}
-//		});
-//
-//		Thread refT2 = new Thread(new Runnable() {
-//			@Override
-//			public void run() {
-//				int stamp = atomicStampedRef.getStamp();
-//				System.out.println("before sleep : stamp = " + stamp); // stamp = 0
-//				try {
-//					TimeUnit.SECONDS.sleep(2);
-//				} catch (InterruptedException e) {
-//					e.printStackTrace();
-//				}
-//				System.out.println("after sleep : stamp = " + atomicStampedRef.getStamp());// stamp = 1
-//				boolean c3 = atomicStampedRef.compareAndSet(100, 101, stamp, stamp + 1);
-//				System.out.println(c3); // false
-//			}
-//		});
-//
-//		refT1.start();
-//		refT2.start();
+
+		// Thread refT1 = new Thread(new Runnable() {
+		// @Override
+		// public void run() {
+		// try {
+		// TimeUnit.SECONDS.sleep(1);
+		// } catch (InterruptedException e) {
+		// e.printStackTrace();
+		// }
+		// atomicStampedRef.compareAndSet(100, 101, atomicStampedRef.getStamp(),
+		// atomicStampedRef.getStamp() + 1);
+		// atomicStampedRef.compareAndSet(101, 100, atomicStampedRef.getStamp(),
+		// atomicStampedRef.getStamp() + 1);
+		// }
+		// });
+		//
+		// Thread refT2 = new Thread(new Runnable() {
+		// @Override
+		// public void run() {
+		// int stamp = atomicStampedRef.getStamp();
+		// System.out.println("before sleep : stamp = " + stamp); // stamp = 0
+		// try {
+		// TimeUnit.SECONDS.sleep(2);
+		// } catch (InterruptedException e) {
+		// e.printStackTrace();
+		// }
+		// System.out.println("after sleep : stamp = " +
+		// atomicStampedRef.getStamp());// stamp = 1
+		// boolean c3 = atomicStampedRef.compareAndSet(100, 101, stamp, stamp +
+		// 1);
+		// System.out.println(c3); // false
+		// }
+		// });
+		//
+		// refT1.start();
+		// refT2.start();
 	}
 
 }

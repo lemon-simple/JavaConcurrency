@@ -548,7 +548,7 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
      * are never exported). Otherwise, keys and vals are never null.
      */
     static class Node<K, V> implements Map.Entry<K, V> {
-        final int hash;
+        final int hash;//key的hashcode执行了hash函数后的值
 
         final K key;
 
@@ -573,8 +573,7 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
 
         public final int hashCode() {
             return key.hashCode() ^ val.hashCode();
-        }
-
+        }if (fh >= 0) {
         public final String toString() {
             return key + "=" + val;
         }
@@ -627,8 +626,7 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
     }
 
     /**
-     * Returns a power of two table size for the given desired capacity. See
-     * Hackers Delight, sec 3.2
+     * 根据预期的capacity参数，返回一个2的N次幂
      */
     private static final int tableSizeFor(int c) {
         int n = c - 1;
@@ -708,8 +706,8 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
     /* ---------------- Fields -------------- */
 
     /**
-     * The array of bins. Lazily initialized upon first insertion. Size is
-     * always a power of two. Accessed directly by iterators.
+     * 数组桶.在第一次插入操作(即put)时候完成初始化(lazy init).
+     * 思考？这里volatile的意义是什么
      */
     transient volatile Node<K, V>[] table;
 
@@ -725,22 +723,15 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
     private transient volatile long baseCount;
 
     /**
-     * Table initialization and resizing control. When negative, the table is
-     * being initialized or resized: -1 for initialization, else -(1 + the
-     * number of active resizing threads). Otherwise, when table is null, holds
-     * the initial table size to use upon creation, or 0 for default. After
-     * initialization, holds the next element count value upon which to resize
-     * the table.
+     * 负数(hashtable正在初始化或者重新扩容)：
+     * 	 -1:表示初始化;-|n|表示n-1个线程正在执行resize。
      * 
-     * 负数： -1:表示初始化
+     * 正数或0:
+     * 	 0表示hash表还没有被初始化;
+     * 	   正数,初始化hashTable之前,表示hashTable的数组size(capacity).
+     * 	   初始化之后,表示下一次扩容的阈值，它的值始终是当前ConcurrentHashMap容量的0.75倍，这与loadfactor是对应的.
      * 
-     * <pre>
-     * -N:表示有N-1个线程正在进行扩容操作 表示有N-1个线程正在进行扩容操作
-     * 
-     * <pre>
-     * 正数或0:表示hash表还没有被初始化，这个数值表示初始化或下一次进行扩容的大小，这一点类似于扩容阈值的概念。
-     * 还后面可以看到，它的值始终是当前ConcurrentHashMap容量的0.75倍，这与loadfactor是对应的。
-     * 
+     * 可以看到,与之前版本实现比较,一个volatile int变量充当了多种身份.
      */
     private transient volatile int sizeCtl;
 
@@ -822,21 +813,10 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
     }
 
     /**
-     * Creates a new, empty map with an initial table size based on the given
-     * number of elements ({@code initialCapacity}), table density
-     * ({@code loadFactor}), and number of concurrently updating threads
-     * ({@code concurrencyLevel}).
-     *
-     * @param initialCapacity the initial capacity. The implementation performs
-     *            internal sizing to accommodate this many elements, given the
-     *            specified load factor.
-     * @param loadFactor the load factor (table density) for establishing the
-     *            initial table size
-     * @param concurrencyLevel the estimated number of concurrently updating
-     *            threads. The implementation may use this value as a sizing
-     *            hint.
-     * @throws IllegalArgumentException if the initial capacity is negative or
-     *             the load factor or concurrencyLevel are nonpositive
+     * @param initialCapacity 初始化的容量,通过位运算根据这个值计算出一个2的N次幂的值,来作为 hashTable数组(bucket)的size.
+     * 默认16
+     * @param loadFactor hashtable的密度,根据这个值来确定是否需要扩容.默认0.75
+     * @param concurrencyLevel 并发更新线程的预估数量.默认1.
      */
     public ConcurrentHashMap8(int initialCapacity, float loadFactor, int concurrencyLevel) {
         if (!(loadFactor > 0.0f) || initialCapacity < 0 || concurrencyLevel <= 0)
@@ -953,44 +933,49 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
         return putVal(key, value, false);
     }
 
-    /** Implementation for put and putIfAbsent */
+	// onlyIfAbsent默认为false,允许key相同的value被覆盖
     final V putVal(K key, V value, boolean onlyIfAbsent) {
         if (key == null || value == null)
             throw new NullPointerException();
-        int hash = spread(key.hashCode());// 对key的高低位进行处理
+		// hash=(h ^(h >>>16))& HASH_BITS：移位运算使高位参与运算,尽可能分布以便减少哈希冲突
+        //这个int hash将作为key对应的结点Node中的成员变量hash使用
+        int hash = spread(key.hashCode());
         int binCount = 0;
-        for (Node<K, V>[] tab = table;;) {
+        for (Node<K, V>[] tab = table;;) {//forloop为了保证CAS失败后自旋重试
             Node<K, V> f;
             int n, i, fh;
-            if (tab == null || (n = tab.length) == 0)// n是tab
-                tab = initTable();//初始化
-            // i = (n -1) & hash 数组的index
-            else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {//根据key找到的数组元素为null
-                if (casTabAt(tab, i, null, new Node<K, V>(hash, key, value, null)))// 初始化这个数组元素的链表
-                    break; // no lock when adding to empty bin
-            } else if ((fh = f.hash) == MOVED)//根据key找到的数组元素已经存在结点 这个数组元素为链表结构
-                tab = helpTransfer(tab, f);// tab代表当前哈希表数组;f代表当前数组元素
+            if (tab == null || (n = tab.length) == 0)
+                tab = initTable();//1.数组桶初始化(延迟初始化hash桶,第一次put操作),并计算下一次rehash的阈值
+            else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {//i = (n -1) & hash:hash数组桶的index,非常类似hashMap的key计算方法
+            	//2.如果这个key对应的数组f位置没有元素,则CAS初始化这个f数组元素(单向链表Node对象)
+                if (casTabAt(tab, i, null, new Node<K, V>(hash, key, value, null)))
+                    break;
+            } else if ((fh = f.hash) == MOVED)//3.f结点已经转换为ForwardingNode,表示有其他线程正在扩容
+                tab = helpTransfer(tab, f);
             else {
                 V oldVal = null;
-                synchronized (f) {
+                synchronized (f) {//4.锁住链表f(或者红黑树)
                     if (tabAt(tab, i) == f) {//再次判断，如果失败则释放锁
                         if (fh >= 0) {
-                            binCount = 1;
+                            binCount = 1;//记录当前数组桶中的链表Node个数.
+                            //5.遍历链表,新增或者覆盖
                             for (Node<K, V> e = f;; ++binCount) {
                                 K ek;
-                                if (e.hash == hash && ((ek = e.key) == key || (ek != null && key.equals(ek)))) {//判断key是否匹配遍历的当前节点
+                                //5.1:查找是否有重复的key,尝试覆盖(默认覆盖)
+                                if (e.hash == hash && ((ek = e.key) == key || (ek != null && key.equals(ek)))) {//当前节点,key.hash&&key匹配
                                     oldVal = e.val;//记录原有value
                                     if (!onlyIfAbsent)//是否允许覆盖 默认允许
                                         e.val = value;//覆盖
                                     break;
                                 }
+                                //5.2:链表末端上新增一个结点
                                 Node<K, V> pred = e;
-                                if ((e = e.next) == null) {//移动到下个结点，并且判断不为null
+                                if ((e = e.next) == null) {//移动到下个结点，直到尾部
                                     pred.next = new Node<K, V>(hash, key, value, null);//为null表示到达链表尾部,此时在尾部插入新的结点。否则继续遍历这个链表
                                     break;
                                 }
                             }
-                        } else if (f instanceof TreeBin) {
+                        } else if (f instanceof TreeBin) {//6.红黑树则使用红黑树插入
                             Node<K, V> p;
                             binCount = 2;
                             if ((p = ((TreeBin<K, V>) f).putTreeVal(hash, key, value)) != null) {
@@ -1001,16 +986,17 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
                         }
                     }
                 }
+                //7.通过binCount判断链表上结点个数，是否需要链表转红黑树
                 if (binCount != 0) {
                     if (binCount >= TREEIFY_THRESHOLD)
                         treeifyBin(tab, i);
                     if (oldVal != null)
-                        return oldVal;
+                        return oldVal;//当同一个key覆盖value的情况下,直接返回oldVal,无需执行后续计数代码
                     break;
                 }
             }
         }
-        addCount(1L, binCount);
+        addCount(1L, binCount);//8
         return null;
     }
 
@@ -2064,7 +2050,7 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
 
         ForwardingNode(Node<K, V>[] tab) {
             super(MOVED, null, null, null);
-            this.nextTable = tab;
+            this.nextTable = tab;//扩容后的新数组
         }
 
         Node<K, V> find(int h, Object k) {
@@ -2117,22 +2103,23 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
     }
 
     /**
-     * Initializes table, using the size recorded in sizeCtl.
+     * 1.初始化数组桶
+     * 2.确认下次扩容阈值(sizeCtl使用CAS设置)
      */
     private final Node<K, V>[] initTable() {
         Node<K, V>[] tab;
         int sc;
         while ((tab = table) == null || tab.length == 0) {
-            if ((sc = sizeCtl) < 0)
+            if ((sc = sizeCtl) < 0)//当sizeCtl<0表示当前对象正在初始化,尝试yield cpu时间以避免不必要的竞争
                 Thread.yield(); // lost initialization race; just spin
             else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {// CAS设置为-1表示正在初始化
                 try {
-                    if ((tab = table) == null || tab.length == 0) {
-                        int n = (sc > 0) ? sc : DEFAULT_CAPACITY;// 默认数组个数16
+                    if ((tab = table) == null || tab.length == 0) {//再次判断
+                        int n = (sc > 0) ? sc : DEFAULT_CAPACITY;//设置初始数组桶的size.默认数组个数16
                         @SuppressWarnings("unchecked")
-                        Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n];// Node数组
+                        Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n];// 数组桶生成
                         table = tab = nt;
-                        sc = n - (n >>> 2);// n-n/2*2
+                        sc = n - (n >>> 2);//计算下一次扩容阈值,等价于sc=n*0.75
                     }
                 } finally {
                     sizeCtl = sc;// resize 阈值
@@ -2144,16 +2131,6 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
     }
 
     /**
-     * Adds to count, and if table is too small and not already resizing,
-     * initiates transfer. If already resizing, helps perform transfer if work
-     * is available. Rechecks occupancy after a transfer to see if another
-     * resize is already needed because resizings are lagging additions.
-     *
-     *增加计数,如果table太小并且没有resizing，执行transfer方法
-     *如果已经执行过resizing了,?
-     *
-     * @param x the count to add
-     * @param check if <0, don't check resize, if <= 1 only check if uncontended
      */
     private final void addCount(long x, int check) {//put方法调用:x默认为1;binCount表示链表遍历的当前个数
         CounterCell[] as;
@@ -2178,14 +2155,14 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
             //当前总数（+1后)>=阈值(sc) && table数组不为null && 数组个数不超标
             while (s >= (long) (sc = sizeCtl) && (tab = table) != null && (n = tab.length) < MAXIMUM_CAPACITY) {
                 int rs = resizeStamp(n);
-                if (sc < 0) {
+                if (sc < 0) {//-1:表示初始化;-|n|表示n-1个线程正在执行resize.
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 || sc == rs + MAX_RESIZERS
                             || (nt = nextTable) == null || transferIndex <= 0)
                         break;
                     if (U.compareAndSwapInt(this, SIZECTL, sc, sc + 1))
                         transfer(tab, nt);
                 } else if (U.compareAndSwapInt(this, SIZECTL, sc, (rs << RESIZE_STAMP_SHIFT) + 2))
-                    transfer(tab, null);
+                    transfer(tab, null);//首次执行
                 s = sumCount();
             }
         }
@@ -2197,13 +2174,12 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
     final Node<K, V>[] helpTransfer(Node<K, V>[] tab, Node<K, V> f) {
         Node<K, V>[] nextTab;
         int sc;
-        // hash数组桶不为null && f属于ForwardingNode(也就是链表结构) && f的下个nextTable !=null???
-        
+        // hash数组桶不为null && f属于ForwardingNode && f的下个nextTable(就是扩容的新数组)!=null
         if (tab != null && (f instanceof ForwardingNode) && (nextTab = ((ForwardingNode<K, V>) f).nextTable) != null) {
             int rs = resizeStamp(tab.length);
             while (nextTab == nextTable && table == tab && (sc = sizeCtl) < 0) {
                 if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 || sc == rs + MAX_RESIZERS || transferIndex <= 0)
-                    break;
+                    break;//???
                 if (U.compareAndSwapInt(this, SIZECTL, sc, sc + 1)) {
                     transfer(tab, nextTab);
                     break;
@@ -2220,20 +2196,22 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
      * @param size number of elements (doesn't need to be perfectly accurate)
      */
     private final void tryPresize(int size) {
-        int c = (size >= (MAXIMUM_CAPACITY >>> 1)) ? MAXIMUM_CAPACITY : tableSizeFor(size + (size >>> 1) + 1);
+    	//c就是capacity,桶数组的size
+    	int c = (size >= (MAXIMUM_CAPACITY >>> 1)) ? MAXIMUM_CAPACITY : tableSizeFor(size + (size >>> 1) + 1);
         int sc;
         while ((sc = sizeCtl) >= 0) {
             Node<K, V>[] tab = table;
             int n;
             if (tab == null || (n = tab.length) == 0) {
-                n = (sc > c) ? sc : c;
-                if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
+                //这个分支的代码不做过多讲解,与初始化部分一致！
+            	n = (sc > c) ? sc : c;//未初始化时,优先使用sc作为默认capacity.
+                if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {//准备初始化,sizectl设为-1,详细参考这个参数的讲解
                     try {
-                        if (table == tab) {
+                        if (table == tab) {//判断table没有发生过变化
                             @SuppressWarnings("unchecked")
                             Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n];
                             table = nt;
-                            sc = n - (n >>> 2);
+                            sc = n - (n >>> 2);//sc=n*0.75
                         }
                     } finally {
                         sizeCtl = sc;
@@ -2241,10 +2219,17 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
                 }
             } else if (c <= sc || n >= MAXIMUM_CAPACITY)
                 break;
-            else if (tab == table) {
+            else if (tab == table) {//判断table没有发生过变化
                 int rs = resizeStamp(n);
-                if (sc < 0) {
+                if (sc < 0) {//-n:n-1线程正在resize.
                     Node<K, V>[] nt;
+                    /**
+                     * 这个判断目的是用来确认是否需要当前线程参与扩容:
+                     * 
+                     * sc == rs + MAX_RESIZERS：不存在多线程扩容重复的时候,一定有(sc >>> RESIZE_STAMP_SHIFT) == rs.
+                     * (nt = nextTable) == null:表示扩容已经结束,对应Line2409处finishing里的处理
+                     * transferIndex <= 0:表示所有的transfer任务都被领取光了，没有剩余的hash桶给自己这个线程来transfer，此时线程不能再帮助扩容了。
+                     */
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 || sc == rs + MAX_RESIZERS
                             || (nt = nextTable) == null || transferIndex <= 0)
                         break;
@@ -2262,17 +2247,24 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
      */
     private final void transfer(Node<K, V>[] tab, Node<K, V>[] nextTab) {
         int n = tab.length, stride;
+        /**
+         * stride = (NCPU > 1) ? (n >>> 3) / NCPU : n
+         * 如何将transfer任务交给多个线程?使用分片：
+         * 	stride表示分片,当cpu核心数>1时,stride=n/8/NCPU;
+         * 	当cpu核心就一个时,stride就是现有数组桶的length.
+         * 	stride最小为16
+         */
         if ((stride = (NCPU > 1) ? (n >>> 3) / NCPU : n) < MIN_TRANSFER_STRIDE)
             stride = MIN_TRANSFER_STRIDE; // subdivide range
-        if (nextTab == null) { // initiating
+        if (nextTab == null) { //初始化nextTab,扩大2倍
             try {
                 @SuppressWarnings("unchecked")
-                Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n << 1];//初始化原有数组双倍长度的新数组
+                Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n << 1];
                 nextTab = nt;
             } catch (Throwable ex) { // try to cope with OOME
                 sizeCtl = Integer.MAX_VALUE;
                 return;
-            }9
+            }
             nextTable = nextTab;
             transferIndex = n;//原有数组长度
         }
@@ -2291,9 +2283,9 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
                     i = -1;
                     advance = false;
                 } else if (U.compareAndSwapInt(this, TRANSFERINDEX, nextIndex,
-                        nextBound = (nextIndex > stride ? nextIndex - stride : 0))) {
-                    bound = nextBound;
-                    i = nextIndex - 1;
+                        nextBound = (nextIndex > stride ? nextIndex - stride : 0))) {//transferIndex按stride递减
+                    bound = nextBound;//transfer——(nextIndex-stride)范围(暂不考虑0)
+                    i = nextIndex - 1;//下一个开始遍历的index
                     advance = false;
                 }
             }
@@ -2311,7 +2303,7 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
                     finishing = advance = true;
                     i = n; // recheck before commit
                 }
-            } else if ((f = tabAt(tab, i)) == null)
+            } else if ((f = tabAt(tab, i)) == null)//如果i位置的数组元素为空,用fwd替代
                 advance = casTabAt(tab, i, null, fwd);
             else if ((fh = f.hash) == MOVED)
                 advance = true; // already processed

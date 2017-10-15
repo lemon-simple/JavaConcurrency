@@ -2191,13 +2191,13 @@ public class HashMap8<K, V> extends AbstractMap<K, V> implements Map<K, V>, Clon
                     (root = l).red = false;
                 else if (pp.right == p)
                     pp.right = l;
-                else
+                els
                     pp.left = l;
                 l.right = p;
                 p.parent = l;
             }
             return root;
-        }
+        }https://tech.meituan.com/redblack-tree.html
 
         static <K, V> TreeNode<K, V> balanceInsertion(TreeNode<K, V> root, TreeNode<K, V> x) {
             x.red = true;
