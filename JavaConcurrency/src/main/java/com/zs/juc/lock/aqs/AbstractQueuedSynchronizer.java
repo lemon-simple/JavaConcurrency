@@ -799,13 +799,15 @@ public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchron
 	}
 
 	/*
-	 * Various flavors of acquire, varying in exclusive/shared and control modes. Each is mostly the same, but annoyingly different.
+	 * Various flavors of acquire, varying in exclusive/shared and control modes. 
+	 * Each is mostly the same, but annoyingly different.
 	 * Only a little bit of factoring is possible due to interactions of exception mechanics (including ensuring that we cancel if
 	 * tryAcquire throws exception) and other control, at least not without hurting performance too much.
 	 */
 
 	/**
-	 * Acquires in exclusive uninterruptible mode for thread already in queue. Used by condition wait methods as well as acquire.
+	 * Acquires in exclusive uninterruptible mode for thread already in queue. 
+	 * Used by condition wait methods as well as acquire.
 	 *
 	 * @param node
 	 *           the node

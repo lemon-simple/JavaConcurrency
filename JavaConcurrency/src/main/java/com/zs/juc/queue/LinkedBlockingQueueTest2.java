@@ -4,12 +4,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-public class LinkedBlockingQueueTest {
+public class LinkedBlockingQueueTest2 {
 
     public static void main(String[] args) throws InterruptedException {
         ExecutorService ex = Executors.newFixedThreadPool(50);
 
         LinkedBlockingQueue<CustomizedTask> tasksQueue = new LinkedBlockingQueue<CustomizedTask>(100);
+        
         // 生产者线程
         new Thread(new Runnable() {
             @Override
