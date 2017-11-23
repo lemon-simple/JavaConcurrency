@@ -14,10 +14,13 @@ public class HashMapInfiniteLoop {
 			0.75f);
 
 	public static void main(String[] args) {
-		System.out.println(ints[0]);
-		String s=new String("2");
-		ints[0] = 10;
-		System.out.println(ints[0]);
+	    
+	    System.out.println((16 << 1) - (16 >>> 1));
+	    
+        // System.out.println(ints[0]);
+        // String s=new String("2");
+        // ints[0] = 10;
+        // System.out.println(ints[0]);
 
 	}
 

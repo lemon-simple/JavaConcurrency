@@ -13,7 +13,6 @@ public class CyclicBarrierTest2 {
             public void run() {
                 System.out.println("    Thread Name : " + Thread.currentThread().getName() + "    times : "
                         + CyclicBarrierTest2.times++);
-
             }
         });
 

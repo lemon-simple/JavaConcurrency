@@ -1,6 +1,7 @@
 package com.zs.juc.countDownLatch;
 
 public class CountDownLatchTest {
+    int count=
     static CountDownLatch countDownLatch = new CountDownLatch(2);
 
     public static void main(String[] args) throws InterruptedException {

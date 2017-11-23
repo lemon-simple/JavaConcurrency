@@ -33,7 +33,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-package com.zs.juc.Semaphore;
+package com.zs.juc.SemaphoreExchange;
 
 import java.util.Collection;
 import java.util.concurrent.TimeUnit;

@@ -2132,7 +2132,7 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
 
     /**
      */
-    private final void addCount(long x, int check) {//put方法调用:x默认为1;binCount表示链表遍历的当前个数
+    private final void addCount(long x, int check) {//put方法调用:x默认为1;binCount(check)表示链表遍历的当前个数
         CounterCell[] as;
         long b, s;
         if ((as = counterCells) != null || !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {//当前k\v元素总数，加1
@@ -2205,7 +2205,10 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
             if (tab == null || (n = tab.length) == 0) {
                 //这个分支的代码不做过多讲解,与初始化部分一致！
             	n = (sc > c) ? sc : c;//未初始化时,优先使用sc作为默认capacity.
-                if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {//准备初始化,sizectl设为-1,详细参考这个参数的讲解
+            	
+                // 第一个执行的线程会首先设置sizeCtl属性为一个负值，然后执行transfer(tab,
+                // null)，其他晚进来的线程会检查当前扩容是否已经完成，没完成则帮助进行扩容，完成了则直接退出
+                if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
                     try {
                         if (table == tab) {//判断table没有发生过变化
                             @SuppressWarnings("unchecked")
@@ -2269,7 +2272,7 @@ public class ConcurrentHashMap8<K, V> extends AbstractMap<K, V> implements Concu
             transferIndex = n;//原有数组长度
         }
         int nextn = nextTab.length;
-        ForwardingNode<K, V> fwd = new ForwardingNode<K, V>(nextTab);//初始化ForwardingNode
+        ForwardingNode<K, V> fwd = new ForwardingNode<K, V>(nextTab);//初始化ForwardingNode。forwardingNode中包含新数组table
         boolean advance = true;
         boolean finishing = false; // to ensure sweep before committing nextTab
         for (int i = 0, bound = 0;;) {
